@@ -1015,19 +1015,21 @@ def _get_linktree(db, did: str) -> list:
 
 
 async def _save_linktree(request: web.Request, session: dict, links: list):
-	"""Write pub.social.linktree/self to the ATProto repo."""
+	"""Write pub.social.linktree/self to the ATProto repo (upsert via create or update)."""
 	db = get_db(request)
 	record = {
 		"$type": LINKTREE_NSID,
 		"links": links,
 		"updatedAt": util.iso_string_now(),
 	}
-	write = {
-		"$type": "com.atproto.repo.applyWrites#put",
-		"collection": LINKTREE_NSID,
-		"rkey": "self",
-		"value": record,
-	}
+	# Determine if record already exists — use update, else create
+	user_id = db.con.execute("SELECT id FROM user WHERE did=?", (session["did"],)).get
+	existing = db.con.execute(
+		"SELECT rkey FROM record WHERE repo=? AND nsid=? AND rkey='self'",
+		(user_id, LINKTREE_NSID),
+	).fetchone() if user_id else None
+	optype = "com.atproto.repo.applyWrites#update" if existing else "com.atproto.repo.applyWrites#create"
+	write = {"$type": optype, "collection": LINKTREE_NSID, "rkey": "self", "value": record}
 	res, firehose_seq, firehose_bytes = repo_ops.apply_writes(
 		db, session["did"], [write], None
 	)
