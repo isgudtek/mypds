@@ -10,68 +10,13 @@ This file is for AI agents. Follow it top-to-bottom to go from zero to a live, f
 
 | # | Modality | Best for | What you need |
 |---|----------|----------|---------------|
-| **A** | **mycrab.space** (recommended) | Fastest setup, no domain required | mycrab admin key (see below) |
-| **B** | **Cloudflare Tunnel** + own domain | User has a domain on Cloudflare | Cloudflare account + domain |
-| **C** | **nginx + certbot** + own domain | VPS with open ports 80/443 | Domain pointing to server IP |
-| **D** | **Other reverse proxy** | Advanced users | User provides their setup |
-
-If the user says **"use mycrab"**, **"mycrab skill"**, or any variant — jump directly to [Modality A](#modality-a--mycrabs-pace-skill) below. Do not ask further questions about the domain.
+| **A** | **Cloudflare Tunnel** + own domain | Fastest setup, no open ports | Cloudflare account + domain |
+| **B** | **nginx + certbot** + own domain | VPS with open ports 80/443 | Domain pointing to server IP |
+| **C** | **Other reverse proxy** | Advanced users | User provides their setup |
 
 ---
 
-## Modality A — mycrab.space skill
-
-> Use this when the user says "use mycrab", "mycrab skill", or similar.
-
-### A1 — Provision a new crab (subdomain)
-
-```bash
-# The mycrab admin key is provided by the mycrab.space operator.
-# Store it in a local env var or secrets manager — never hardcode it.
-ADMIN_KEY="<your-mycrab-admin-key>"
-
-# Pick a subdomain slug — use the user's name, project name, or ask
-SLUG="alice"   # e.g. alice.mycrab.space
-
-curl -s -X POST https://api.mycrab.space/reserve-domain \
-  -H "X-Admin-Key: $ADMIN_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{\"subdomain\": \"$SLUG\"}"
-```
-
-Response:
-```json
-{"token": "...", "subdomain": "alice", "url": "https://alice.mycrab.space"}
-```
-
-Record `DOMAIN=alice.mycrab.space` and `PDS_URL=https://alice.mycrab.space`.
-
-**Default handle = the mycrab domain** → `HANDLE="alice.mycrab.space"`
-
-### A2 — Ask about vanity domain (optional)
-
-After provisioning the crab, ask the user:
-
-> "Your PDS will be live at `https://alice.mycrab.space`. Do you have a custom domain you'd like to use as your handle instead? (e.g. `alice.com` or `pds.alice.com`) — totally optional, the mycrab domain works fine on its own."
-
-- If **yes**: set `HANDLE` to the vanity domain and configure DNS handle resolution per Step 4 below. The PDS URL stays as the mycrab domain.
-- If **no**: proceed with `HANDLE=alice.mycrab.space`. Handle resolution is automatic (mycrab.space handles `.well-known/atproto-did` at the subdomain level).
-
-### A3 — Tunnel setup (already done by mycrab)
-
-mycrab.space uses Cloudflare Tunnel internally. No tunnel setup needed. The subdomain is live immediately after provisioning.
-
-Verify:
-```bash
-curl -sI https://alice.mycrab.space | head -1
-# Expected: HTTP/2 200 (or 502 — fine, mypds not started yet)
-```
-
-Then **skip to [Step 1 — Install mypds](#step-1--install-mypds)**.
-
----
-
-## Modality B — Cloudflare Tunnel + own domain
+## Modality A — Cloudflare Tunnel + own domain
 
 ```bash
 # Install cloudflared
@@ -108,7 +53,7 @@ curl -sI https://pds.example.com | head -1
 
 ---
 
-## Modality C — nginx + certbot
+## Modality B — nginx + certbot
 
 ```bash
 apt install -y nginx certbot python3-certbot-nginx
@@ -167,10 +112,10 @@ cd /tmp/mypds-setup
 
 Successful output:
 ```
-Created identity for alice.mycrab.space at https://plc.directory/did:plc:xxxxxxxxxxxx
-rotation key → alice.mycrab.space_rotation_key.pem   ← STORE SAFELY, NEVER ON SERVER
-repo signing key → alice.mycrab.space_repo_key.pem   ← needed on server
-did:plc string → alice.mycrab.space_did.txt
+Created identity for alice.example.com at https://plc.directory/did:plc:xxxxxxxxxxxx
+rotation key → alice.example.com_rotation_key.pem   ← STORE SAFELY, NEVER ON SERVER
+repo signing key → alice.example.com_repo_key.pem   ← needed on server
+did:plc string → alice.example.com_did.txt
 ```
 
 **Tell the user:** The rotation key is their master identity key. They must save it offline and keep it off the server. If it's lost, the DID cannot be recovered.
@@ -185,9 +130,7 @@ DID=$(cat "${HANDLE}_did.txt")
 
 ## Step 3 — DNS handle resolution
 
-Skip this step if **Modality A with no vanity domain** — mycrab.space handles it automatically.
-
-Otherwise, the handle must resolve to the DID. Two methods:
+The handle must resolve to the DID. Two methods:
 
 ### Method A — DNS TXT record
 Add a TXT record at `_atproto.<handle-subdomain>` with value `did=<DID>`.
@@ -297,8 +240,12 @@ Open `$PDS_URL` in a browser:
 | `/dashboard` | owner | Stats, quick actions, app tiles |
 | `/compose` | owner | Write ATProto posts |
 | `/gallery` | public | `pub.gallery.image` photo grid |
-| `/pages` | owner | `com.whtwnd.blog.entry` blog pages |
+| `/pages` | public/owner | `com.whtwnd.blog.entry` blog pages |
+| `/places` | public/owner | `pub.places.pin` map of pinned locations |
+| `/links` | public | `pub.social.linktree` link list |
 | `/files` | owner | Upload files via blob store |
+| `/dropbox` | public | File inbox — anyone can send files |
+| `/settings` | owner | Nickname, profile photo, accent color |
 | `/node-info` | public | DID, ATProto endpoints, stats |
 
 ---
