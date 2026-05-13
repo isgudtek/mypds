@@ -175,3 +175,4 @@ password.txt
 # cloudflared tunnel configs
 *.yml
 !pyproject.toml
+.github/workflows/
