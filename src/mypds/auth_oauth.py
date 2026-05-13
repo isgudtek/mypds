@@ -226,7 +226,7 @@ def dpop_protected(handler):
 		request["dpop_jti"] = decoded[
 			"jti"
 		]  # XXX: should replay prevention happen here?
-		request["dpop_iss"] = decoded["iss"]
+		request["dpop_iss"] = decoded.get("iss")  # iss is optional in DPoP spec
 
 		res: web.Response = await handler(request)
 		res.headers["DPoP-Nonce"] = (
@@ -245,7 +245,9 @@ async def oauth_pushed_authorization_request(request: web.Request):
 	)  # TODO: doesn't rfc9126 say it's posted as form data?
 	logging.info(data)
 
-	assert data["client_id"] == request["dpop_iss"]  # idk if this is required
+	# Verify client_id matches DPoP issuer if iss is present
+	if request["dpop_iss"] and data["client_id"] != request["dpop_iss"]:
+		raise web.HTTPBadRequest(text="client_id does not match dpop iss")
 
 	# we need to store the request somewhere, and associate it with the URI we return
 
