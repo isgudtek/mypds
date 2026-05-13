@@ -28,6 +28,7 @@
         <li><a href="/dashboard">dashboard</a></li>
         <li><a href="/compose">compose</a></li>
         {% if apps.files %}<li><a href="/files">files</a></li>{% endif %}
+        {% if apps.dropbox %}<li><a href="/dropbox/inbox">inbox</a></li>{% endif %}
         <li><a href="/settings">settings</a></li>
         <li><a href="/logout">logout</a></li>
       {% else %}

@@ -52,6 +52,20 @@ class WebStore:
 				value TEXT NOT NULL
 			)
 		""")
+		# Ensure dropbox_item table exists
+		self.con.execute("""
+			CREATE TABLE IF NOT EXISTS dropbox_item (
+				id          INTEGER PRIMARY KEY AUTOINCREMENT,
+				filename    TEXT NOT NULL,
+				orig_name   TEXT NOT NULL,
+				mime_type   TEXT NOT NULL,
+				size        INTEGER NOT NULL,
+				sender_name TEXT NOT NULL DEFAULT '',
+				message     TEXT NOT NULL DEFAULT '',
+				status      TEXT NOT NULL DEFAULT 'pending',
+				created_at  INTEGER NOT NULL
+			)
+		""")
 		self.con.commit()
 
 	def _init_tables(self):
@@ -95,6 +109,18 @@ class WebStore:
 			CREATE TABLE IF NOT EXISTS node_settings (
 				key   TEXT PRIMARY KEY,
 				value TEXT NOT NULL
+			);
+
+			CREATE TABLE IF NOT EXISTS dropbox_item (
+				id          INTEGER PRIMARY KEY AUTOINCREMENT,
+				filename    TEXT NOT NULL,
+				orig_name   TEXT NOT NULL,
+				mime_type   TEXT NOT NULL,
+				size        INTEGER NOT NULL,
+				sender_name TEXT NOT NULL DEFAULT '',
+				message     TEXT NOT NULL DEFAULT '',
+				status      TEXT NOT NULL DEFAULT 'pending',
+				created_at  INTEGER NOT NULL
 			);
 		""")
 		self.con.commit()
@@ -245,7 +271,7 @@ class WebStore:
 
 	# ── App Settings ──────────────────────────────────────────────────────────
 
-	KNOWN_APPS = ["compose", "pages", "files", "gallery", "links", "places"]
+	KNOWN_APPS = ["compose", "pages", "files", "gallery", "links", "places", "dropbox"]
 
 	def get_app_enabled(self, app_name: str) -> bool:
 		row = self.con.execute(
@@ -285,3 +311,48 @@ class WebStore:
 	def get_all_node_settings(self) -> Dict[str, str]:
 		rows = self.con.execute("SELECT key, value FROM node_settings").fetchall()
 		return {r["key"]: r["value"] for r in rows}
+
+	# ── Dropbox ───────────────────────────────────────────────────────────────
+
+	DROPBOX_DIR_NAME = "dropbox"
+
+	def save_dropbox_item(self, filename: str, orig_name: str, mime_type: str, size: int,
+	                      sender_name: str = "", message: str = "") -> int:
+		cur = self.con.execute(
+			"INSERT INTO dropbox_item(filename, orig_name, mime_type, size, sender_name, message, status, created_at) "
+			"VALUES (?,?,?,?,?,?,'pending',?)",
+			(filename, orig_name, mime_type, size, sender_name[:120], message[:500], int(time.time())),
+		)
+		self.con.commit()
+		return cur.lastrowid
+
+	def list_dropbox_items(self, status: Optional[str] = None) -> List[Dict]:
+		if status:
+			rows = self.con.execute(
+				"SELECT * FROM dropbox_item WHERE status=? ORDER BY created_at DESC", (status,)
+			).fetchall()
+		else:
+			rows = self.con.execute(
+				"SELECT * FROM dropbox_item ORDER BY created_at DESC"
+			).fetchall()
+		return [dict(r) for r in rows]
+
+	def get_dropbox_item(self, item_id: int) -> Optional[Dict]:
+		row = self.con.execute("SELECT * FROM dropbox_item WHERE id=?", (item_id,)).fetchone()
+		return dict(row) if row else None
+
+	def accept_dropbox_item(self, item_id: int):
+		"""Mark as accepted (file moves to media_file via web route)."""
+		self.con.execute("UPDATE dropbox_item SET status='accepted' WHERE id=?", (item_id,))
+		self.con.commit()
+
+	def delete_dropbox_item(self, item_id: int):
+		row = self.get_dropbox_item(item_id)
+		if row:
+			path = os.path.join(MEDIA_DIR, "dropbox", row["filename"])
+			try:
+				os.remove(path)
+			except FileNotFoundError:
+				pass
+		self.con.execute("DELETE FROM dropbox_item WHERE id=?", (item_id,))
+		self.con.commit()

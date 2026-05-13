@@ -1,0 +1,108 @@
+{% extends "node_base.html" %}
+{% block title %}dropbox{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:48px; padding-bottom:80px; max-width:500px;">
+
+  <div style="text-align:center; margin-bottom:36px;">
+    <div style="margin-bottom:14px;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none"
+           stroke="var(--red)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+    </div>
+    <h1 style="font-size:1.2rem; font-weight:700; margin-bottom:6px;">
+      Send a file to {{ node_settings.nickname or '@' ~ profile.handle }}
+    </h1>
+    <div class="mono text-dim" style="font-size:.7rem;">files go to the owner's inbox for review · max 20 MB</div>
+  </div>
+
+  {% if sent %}
+  <div class="alert alert--success" style="text-align:center; padding:24px;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         style="display:block; margin:0 auto 10px;">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    File sent! The owner will review it.
+    <br><br>
+    <a href="/dropbox" style="font-size:.82rem;">send another →</a>
+  </div>
+
+  {% else %}
+
+  {% if error %}
+  <div class="alert alert--error" style="margin-bottom:16px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/dropbox" enctype="multipart/form-data">
+
+    <div class="form-group">
+      <label for="sender_name">your name (optional)</label>
+      <input id="sender_name" class="input" type="text" name="sender_name" placeholder="Anonymous" maxlength="120">
+    </div>
+
+    <div class="form-group">
+      <label for="message">message (optional)</label>
+      <textarea id="message" class="input" name="message" rows="3" placeholder="Any context about the file…" maxlength="500" style="resize:vertical;"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label for="file">file *</label>
+      <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file').click()">
+        <input id="file" type="file" name="file" style="display:none;" onchange="showFile(this)">
+        <div id="drop-label">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+               style="color:var(--muted); margin-bottom:8px;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <div style="font-size:.85rem; color:var(--muted);">click or drag a file here</div>
+          <div class="mono text-dim" style="font-size:.68rem; margin-top:4px;">max 20 MB</div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn--primary" type="submit" style="cursor:pointer; width:100%;">send file</button>
+
+  </form>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showFile(input) {
+  if (!input.files[0]) return;
+  const f = input.files[0];
+  const sz = f.size < 1024*1024 ? (f.size/1024).toFixed(0)+'KB' : (f.size/1024/1024).toFixed(1)+'MB';
+  document.getElementById('drop-label').innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+         stroke="var(--cyan)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+         style="margin-bottom:6px;">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    <div style="font-size:.88rem; font-weight:600;">${f.name}</div>
+    <div class="mono text-dim" style="font-size:.68rem; margin-top:3px;">${sz}</div>
+  `;
+  document.getElementById('drop-zone').style.borderColor = 'var(--cyan)';
+}
+
+const dz = document.getElementById('drop-zone');
+if (dz) {
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    const fi = document.getElementById('file');
+    fi.files = e.dataTransfer.files;
+    showFile(fi);
+  });
+}
+</script>
+{% endblock %}

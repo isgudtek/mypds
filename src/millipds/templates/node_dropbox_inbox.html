@@ -1,0 +1,102 @@
+{% extends "node_base.html" %}
+{% block title %}dropbox inbox{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:80px;">
+
+  <div class="flex items-center gap-8" style="margin-bottom:24px;">
+    <h1 style="font-size:1.3rem; font-weight:700;">Dropbox Inbox</h1>
+    <span class="badge badge--pub" style="margin-left:8px;">{{ pending|length }} pending</span>
+    <a class="btn btn--ghost btn--sm" href="/dropbox" target="_blank" style="margin-left:auto; cursor:pointer;">public link ↗</a>
+  </div>
+
+  {% if pending %}
+  <div class="panel" style="margin-bottom:24px;">
+    <div class="panel__title">pending review</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>file</th>
+            <th>from</th>
+            <th>message</th>
+            <th>size</th>
+            <th>received</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in pending %}
+          <tr>
+            <td>
+              <a href="/dropbox/file/{{ item.filename }}" target="_blank"
+                 class="mono" style="font-size:.78rem;">{{ item.orig_name }}</a>
+              <div class="mono text-dim" style="font-size:.65rem;">{{ item.mime_type }}</div>
+            </td>
+            <td style="font-size:.82rem;">{{ item.sender_name or '—' }}</td>
+            <td style="font-size:.8rem; color:var(--muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              {{ item.message or '—' }}
+            </td>
+            <td class="mono text-dim" style="font-size:.72rem;">
+              {% if item.size < 1024*1024 %}{{ (item.size/1024)|int }}KB{% else %}{{ '%.1f'|format(item.size/1024/1024) }}MB{% endif %}
+            </td>
+            <td class="mono text-dim" style="font-size:.72rem;">{{ item.created_at | int | timestamp }}</td>
+            <td>
+              <div class="flex gap-8">
+                <form method="post" action="/dropbox/{{ item.id }}/accept">
+                  <button class="btn btn--primary btn--sm" type="submit" style="cursor:pointer;">accept</button>
+                </form>
+                <form method="post" action="/dropbox/{{ item.id }}/delete"
+                      onsubmit="return confirm('Delete {{ item.orig_name }}?')">
+                  <button class="btn btn--danger btn--sm" type="submit" style="cursor:pointer;">delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty" style="margin-bottom:24px;">
+    <div class="empty__icon">📬</div>
+    No pending files.
+  </div>
+  {% endif %}
+
+  {% if accepted %}
+  <div class="panel">
+    <div class="panel__title">accepted</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>file</th>
+            <th>from</th>
+            <th>size</th>
+            <th>received</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in accepted %}
+          <tr>
+            <td>
+              <a href="/media/{{ item.filename }}" target="_blank"
+                 class="mono" style="font-size:.78rem;">{{ item.orig_name }}</a>
+            </td>
+            <td style="font-size:.82rem;">{{ item.sender_name or '—' }}</td>
+            <td class="mono text-dim" style="font-size:.72rem;">
+              {% if item.size < 1024*1024 %}{{ (item.size/1024)|int }}KB{% else %}{{ '%.1f'|format(item.size/1024/1024) }}MB{% endif %}
+            </td>
+            <td class="mono text-dim" style="font-size:.72rem;">{{ item.created_at | int | timestamp }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

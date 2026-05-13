@@ -1250,6 +1250,124 @@ async def places_delete(request: web.Request):
 	raise web.HTTPFound("/places")
 
 
+# ── Dropbox ───────────────────────────────────────────────────────────────────
+#
+# Public file inbox: anyone can send a file + optional message.
+# Owner reviews in /dropbox/inbox — accept (saves to files) or delete.
+
+DROPBOX_MAX_MB = 20
+
+@web_routes.get("/dropbox")
+async def dropbox_public(request: web.Request):
+	ws = get_web_store(request)
+	if not ws.get_app_enabled("dropbox"):
+		raise web.HTTPNotFound()
+	db = get_db(request)
+	profile = get_node_profile(db)
+	return render(request, "node_dropbox.html", {"profile": profile, "sent": False, "error": None})
+
+
+@web_routes.post("/dropbox")
+async def dropbox_post(request: web.Request):
+	ws = get_web_store(request)
+	if not ws.get_app_enabled("dropbox"):
+		raise web.HTTPNotFound()
+	db = get_db(request)
+	profile = get_node_profile(db)
+
+	reader = await request.multipart()
+	sender_name = ""
+	message = ""
+	file_data = None
+	orig_name = "file"
+	mime = "application/octet-stream"
+
+	while True:
+		field = await reader.next()
+		if field is None:
+			break
+		if field.name == "sender_name":
+			sender_name = (await field.read()).decode("utf-8", errors="replace").strip()
+		elif field.name == "message":
+			message = (await field.read()).decode("utf-8", errors="replace").strip()
+		elif field.name == "file" and field.filename:
+			orig_name = field.filename
+			mime = field.headers.get("Content-Type", "") or mimetypes.guess_type(orig_name)[0] or "application/octet-stream"
+			file_data = await field.read()
+
+	if not file_data:
+		return render(request, "node_dropbox.html", {"profile": profile, "sent": False, "error": "No file selected"})
+	if len(file_data) > DROPBOX_MAX_MB * 1024 * 1024:
+		return render(request, "node_dropbox.html", {"profile": profile, "sent": False, "error": f"File too large (max {DROPBOX_MAX_MB} MB)"})
+
+	# Save to dropbox quarantine dir
+	import pathlib
+	dropbox_dir = pathlib.Path(MEDIA_DIR) / "dropbox"
+	dropbox_dir.mkdir(exist_ok=True)
+	ext = pathlib.Path(orig_name).suffix or ""
+	safe_name = secrets.token_hex(14) + ext
+	(dropbox_dir / safe_name).write_bytes(file_data)
+
+	ws.save_dropbox_item(safe_name, orig_name, mime, len(file_data), sender_name, message)
+	return render(request, "node_dropbox.html", {"profile": profile, "sent": True, "error": None})
+
+
+@web_routes.get("/dropbox/inbox")
+async def dropbox_inbox(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	ws = get_web_store(request)
+	items = ws.list_dropbox_items()
+	pending = [i for i in items if i["status"] == "pending"]
+	accepted = [i for i in items if i["status"] == "accepted"]
+	return render(request, "node_dropbox_inbox.html", {"pending": pending, "accepted": accepted})
+
+
+@web_routes.post("/dropbox/{item_id}/accept")
+async def dropbox_accept(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	item_id = int(request.match_info["item_id"])
+	ws = get_web_store(request)
+	item = ws.get_dropbox_item(item_id)
+	if item and item["status"] == "pending":
+		# Copy from dropbox quarantine into public media
+		import pathlib, shutil
+		src = pathlib.Path(MEDIA_DIR) / "dropbox" / item["filename"]
+		dst = pathlib.Path(MEDIA_DIR) / item["filename"]
+		if src.exists():
+			shutil.copy2(src, dst)
+		ws.save_file(item["filename"], item["orig_name"], item["mime_type"], item["size"], is_public=True)
+		ws.accept_dropbox_item(item_id)
+	raise web.HTTPFound("/dropbox/inbox")
+
+
+@web_routes.post("/dropbox/{item_id}/delete")
+async def dropbox_delete(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	item_id = int(request.match_info["item_id"])
+	get_web_store(request).delete_dropbox_item(item_id)
+	raise web.HTTPFound("/dropbox/inbox")
+
+
+@web_routes.get("/dropbox/file/{filename}")
+async def dropbox_file_serve(request: web.Request):
+	"""Serve quarantine files — owner only."""
+	session = get_session(request)
+	if not session:
+		raise web.HTTPForbidden()
+	filename = request.match_info["filename"]
+	import pathlib
+	path = pathlib.Path(MEDIA_DIR) / "dropbox" / filename
+	if not path.exists():
+		raise web.HTTPNotFound()
+	return web.FileResponse(path)
+
+
 # ── App toggle ────────────────────────────────────────────────────────────────
 
 @web_routes.post("/apps/{app}/toggle")
