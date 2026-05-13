@@ -156,6 +156,7 @@ async def homepage(request: web.Request):
 	files = [f for f in ws.list_files() if f["is_public"]] if apps.get("files", True) else []
 	gallery = _get_gallery(db, profile["did"], limit=6) if (profile["did"] and apps.get("gallery", True)) else []
 	links = _get_linktree(db, profile["did"]) if (profile["did"] and apps.get("links", True)) else []
+	# Note: apps also injected by render() — not passed explicitly to avoid duplicate kwarg
 	version = _get_version()
 
 	return render(request, "node_home.html", {
@@ -165,7 +166,6 @@ async def homepage(request: web.Request):
 		"files": files,
 		"gallery": gallery,
 		"links": links,
-		"apps": apps,
 		"version": version,
 	})
 
@@ -323,7 +323,6 @@ async def dashboard(request: web.Request):
 	ws = get_web_store(request)
 	pages = ws.list_pages()
 	files = ws.list_files()
-	apps = ws.get_all_app_settings()
 	version = _get_version()
 
 	# count blobs
@@ -338,7 +337,6 @@ async def dashboard(request: web.Request):
 		"pages": pages,
 		"files": files,
 		"blob_count": blob_count,
-		"apps": apps,
 		"version": version,
 	})
 
