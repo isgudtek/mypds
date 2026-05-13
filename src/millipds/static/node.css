@@ -864,3 +864,58 @@ tr:hover td { background: var(--surface2); }
   margin-top: 12px;
   padding: 0 4px;
 }
+
+/* ── Linktree ─────────────────────────────────────────────────────────────── */
+
+.linktree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.linktree-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: .92rem;
+  font-weight: 500;
+  transition: border-color .15s, background .15s;
+}
+
+.linktree-card:hover {
+  border-color: var(--cyan);
+  background: var(--surface2);
+}
+
+.linktree-card__title { flex: 1; }
+
+/* ── App toggle ───────────────────────────────────────────────────────────── */
+
+.app-tile--off { opacity: .45; }
+
+.app-toggle {
+  font-size: .65rem;
+  font-family: var(--mono);
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--dim);
+  letter-spacing: .05em;
+}
+
+.app-toggle--on {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: rgba(34,211,238,.08);
+}
+
+.app-toggle:hover { opacity: .8; }
+
+.app-tile__toggle { font-size: .65rem; color: var(--dim); margin-top: 6px; }

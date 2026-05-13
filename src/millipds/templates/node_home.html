@@ -80,6 +80,17 @@
       </div>
       {% endif %}
 
+      {% if links and apps.links %}
+      <div class="panel">
+        <div class="panel__title"><a href="/links" style="color:inherit;">links</a></div>
+        {% for link in links[:8] %}
+        <div style="padding:5px 0; border-bottom:1px solid var(--border); font-size:.82rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          <a href="{{ link.url }}" target="_blank" rel="noopener">{{ link.title }}</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       <div class="panel">
         <div class="panel__title">node info</div>
         <div style="font-size:.75rem; font-family:var(--mono); color:var(--muted); line-height:2;">

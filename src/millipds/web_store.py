@@ -38,6 +38,13 @@ class WebStore:
 		]:
 			if col not in existing:
 				self.con.execute(f"ALTER TABLE page ADD COLUMN {col} {defn}")
+		# Ensure app_settings table exists (may not exist on older installs)
+		self.con.execute("""
+			CREATE TABLE IF NOT EXISTS app_settings (
+				app_name TEXT PRIMARY KEY,
+				enabled  INTEGER NOT NULL DEFAULT 1
+			)
+		""")
 		self.con.commit()
 
 	def _init_tables(self):
@@ -71,6 +78,11 @@ class WebStore:
 				size        INTEGER NOT NULL,
 				is_public   INTEGER NOT NULL DEFAULT 1,
 				created_at  INTEGER NOT NULL
+			);
+
+			CREATE TABLE IF NOT EXISTS app_settings (
+				app_name TEXT PRIMARY KEY,
+				enabled  INTEGER NOT NULL DEFAULT 1
 			);
 		""")
 		self.con.commit()
@@ -218,3 +230,28 @@ class WebStore:
 			"UPDATE media_file SET is_public = NOT is_public WHERE id=?", (file_id,)
 		)
 		self.con.commit()
+
+	# ── App Settings ──────────────────────────────────────────────────────────
+
+	KNOWN_APPS = ["compose", "pages", "files", "gallery", "links"]
+
+	def get_app_enabled(self, app_name: str) -> bool:
+		row = self.con.execute(
+			"SELECT enabled FROM app_settings WHERE app_name=?", (app_name,)
+		).fetchone()
+		return bool(row["enabled"]) if row else True  # default on
+
+	def set_app_enabled(self, app_name: str, enabled: bool):
+		self.con.execute(
+			"INSERT INTO app_settings(app_name, enabled) VALUES(?,?) "
+			"ON CONFLICT(app_name) DO UPDATE SET enabled=excluded.enabled",
+			(app_name, int(enabled)),
+		)
+		self.con.commit()
+
+	def get_all_app_settings(self) -> Dict[str, bool]:
+		rows = self.con.execute("SELECT app_name, enabled FROM app_settings").fetchall()
+		settings = {app: True for app in self.KNOWN_APPS}
+		for r in rows:
+			settings[r["app_name"]] = bool(r["enabled"])
+		return settings

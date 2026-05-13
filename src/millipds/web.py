@@ -72,8 +72,9 @@ def clear_session_cookie(response: web.Response):
 def render(request: web.Request, template: str, ctx: dict = {}, status: int = 200) -> web.Response:
 	jinja = get_jinja_env(request)
 	session = get_session(request)
+	apps = get_web_store(request).get_all_app_settings()
 	tmpl = jinja.get_template(template)
-	html = tmpl.render(session=session, **ctx)
+	html = tmpl.render(session=session, apps=apps, **ctx)
 	resp = web.Response(text=html, content_type="text/html", charset="utf-8", status=status)
 	resp.headers["Content-Security-Policy"] = NODE_CSP
 	resp.headers["X-Frame-Options"] = "DENY"
@@ -150,9 +151,11 @@ async def homepage(request: web.Request):
 			p["ts_human"] = format_ts(p["created_at"])
 
 	ws = get_web_store(request)
-	pages = [p for p in ws.list_pages() if p["is_published"]]
-	files = [f for f in ws.list_files() if f["is_public"]]
-	gallery = _get_gallery(db, profile["did"], limit=6) if profile["did"] else []
+	apps = ws.get_all_app_settings()
+	pages = [p for p in ws.list_pages() if p["is_published"]] if apps.get("pages", True) else []
+	files = [f for f in ws.list_files() if f["is_public"]] if apps.get("files", True) else []
+	gallery = _get_gallery(db, profile["did"], limit=6) if (profile["did"] and apps.get("gallery", True)) else []
+	links = _get_linktree(db, profile["did"]) if (profile["did"] and apps.get("links", True)) else []
 	version = _get_version()
 
 	return render(request, "node_home.html", {
@@ -161,6 +164,8 @@ async def homepage(request: web.Request):
 		"pages": pages,
 		"files": files,
 		"gallery": gallery,
+		"links": links,
+		"apps": apps,
 		"version": version,
 	})
 
@@ -318,6 +323,7 @@ async def dashboard(request: web.Request):
 	ws = get_web_store(request)
 	pages = ws.list_pages()
 	files = ws.list_files()
+	apps = ws.get_all_app_settings()
 	version = _get_version()
 
 	# count blobs
@@ -332,6 +338,7 @@ async def dashboard(request: web.Request):
 		"pages": pages,
 		"files": files,
 		"blob_count": blob_count,
+		"apps": apps,
 		"version": version,
 	})
 
@@ -795,6 +802,7 @@ async def _announce_page(request: web.Request, session: dict, title: str, body: 
 #   at://<did>/pub.gallery.image/<rkey>
 
 GALLERY_NSID = "pub.gallery.image"
+LINKTREE_NSID = "pub.social.linktree"
 
 
 def _store_blob(db, did: str, data: bytes, mime: str):
@@ -986,3 +994,100 @@ def _get_version() -> str:
 		return f"millipds v{importlib.metadata.version('millipds')}"
 	except Exception:
 		return "millipds"
+
+
+# ── Linktree ──────────────────────────────────────────────────────────────────
+
+def _get_linktree(db, did: str) -> list:
+	"""Read pub.social.linktree/self from the ATProto repo."""
+	user_id = db.con.execute("SELECT id FROM user WHERE did=?", (did,)).get
+	if user_id is None:
+		return []
+	row = db.con.execute(
+		"SELECT value FROM record WHERE repo=? AND nsid=? AND rkey='self'",
+		(user_id, LINKTREE_NSID),
+	).fetchone()
+	if not row:
+		return []
+	try:
+		rec = cbrrr.decode_dag_cbor(row[0])
+		return rec.get("links", [])
+	except Exception:
+		return []
+
+
+async def _save_linktree(request: web.Request, session: dict, links: list):
+	"""Write pub.social.linktree/self to the ATProto repo."""
+	db = get_db(request)
+	record = {
+		"$type": LINKTREE_NSID,
+		"links": links,
+		"updatedAt": util.iso_string_now(),
+	}
+	write = {
+		"$type": "com.atproto.repo.applyWrites#put",
+		"collection": LINKTREE_NSID,
+		"rkey": "self",
+		"value": record,
+	}
+	res, firehose_seq, firehose_bytes = repo_ops.apply_writes(
+		db, session["did"], [write], None
+	)
+	await atproto_repo.firehose_broadcast(request, (firehose_seq, firehose_bytes))
+
+
+@web_routes.get("/links")
+async def links_page(request: web.Request):
+	ws = get_web_store(request)
+	if not ws.get_app_enabled("links"):
+		raise web.HTTPNotFound()
+	db = get_db(request)
+	profile = get_node_profile(db)
+	links = _get_linktree(db, profile["did"]) if profile["did"] else []
+	return render(request, "node_links.html", {"profile": profile, "links": links})
+
+
+@web_routes.get("/links/edit")
+async def links_edit_page(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	db = get_db(request)
+	profile = get_node_profile(db)
+	links = _get_linktree(db, session["did"])
+	return render(request, "node_links_edit.html", {"profile": profile, "links": links, "error": None})
+
+
+@web_routes.post("/links/edit")
+async def links_edit_post(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	data = await request.post()
+	titles = data.getall("title", [])
+	urls = data.getall("url", [])
+	icons = data.getall("icon", [])
+	links = []
+	for i, (title, url) in enumerate(zip(titles, urls)):
+		title = title.strip()
+		url = url.strip()
+		if title and url:
+			icon = icons[i] if i < len(icons) else ""
+			links.append({"title": title, "url": url, "icon": icon.strip()})
+	await _save_linktree(request, session, links)
+	raise web.HTTPFound("/links/edit")
+
+
+# ── App toggle ────────────────────────────────────────────────────────────────
+
+@web_routes.post("/apps/{app}/toggle")
+async def app_toggle(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	app_name = request.match_info["app"]
+	ws = get_web_store(request)
+	if app_name in ws.KNOWN_APPS and app_name != "compose":
+		current = ws.get_app_enabled(app_name)
+		ws.set_app_enabled(app_name, not current)
+	raise web.HTTPFound("/dashboard")

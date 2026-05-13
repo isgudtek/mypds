@@ -1,0 +1,54 @@
+{% extends "node_base.html" %}
+{% block title %}links{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:48px; padding-bottom:80px; max-width:520px;">
+
+  <div style="text-align:center; margin-bottom:36px;">
+    <div style="font-size:2.2rem; margin-bottom:8px;">🦀</div>
+    <div style="font-size:1.1rem; font-weight:700;">@{{ profile.handle }}</div>
+    <div class="mono text-dim" style="font-size:.7rem; margin-top:4px;">
+      <a href="https://atproto-browser.vercel.app/at?u=at://{{ profile.did }}/pub.social.linktree/self"
+         target="_blank" rel="noopener" style="color:var(--dim); text-decoration:none;">
+        pub.social.linktree ↗
+      </a>
+    </div>
+  </div>
+
+  {% if links %}
+  <div class="linktree-list">
+    {% for link in links %}
+    <a class="linktree-card" href="{{ link.url }}" target="_blank" rel="noopener" style="cursor:pointer;">
+      <span class="linktree-card__title">{{ link.title }}</span>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           style="flex-shrink:0; color:var(--dim);">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+      </svg>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty__icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+           style="color:var(--border2);">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      </svg>
+    </div>
+    No links yet.
+    {% if session %}<a href="/links/edit">Add some →</a>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if session %}
+  <div style="text-align:center; margin-top:32px;">
+    <a class="btn btn--ghost btn--sm" href="/links/edit" style="cursor:pointer;">edit links</a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

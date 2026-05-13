@@ -1,0 +1,70 @@
+{% extends "node_base.html" %}
+{% block title %}edit links{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:80px; max-width:600px;">
+
+  <div style="margin-bottom:28px;">
+    <div class="mono text-dim" style="font-size:.7rem; margin-bottom:8px;">
+      <a href="/links" style="color:var(--dim);">links</a> / edit
+    </div>
+    <h1 style="font-size:1.3rem; font-weight:700;">Edit Links</h1>
+    <div class="mono text-dim" style="font-size:.68rem; margin-top:4px;">
+      stored as <span style="color:var(--cyan);">at://{{ profile.did }}/pub.social.linktree/self</span>
+    </div>
+  </div>
+
+  <form method="post" action="/links/edit" id="linktree-form">
+
+    <div id="link-rows">
+      {% for link in links %}
+      <div class="link-row" style="display:grid; grid-template-columns:1fr 1fr auto; gap:8px; margin-bottom:10px; align-items:center;">
+        <input class="input" type="text" name="title" value="{{ link.title }}" placeholder="Label (e.g. Bluesky)" required>
+        <input class="input" type="url" name="url" value="{{ link.url }}" placeholder="https://..." required>
+        <button type="button" class="btn btn--danger btn--sm" onclick="this.closest('.link-row').remove()" style="cursor:pointer;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+        <input type="hidden" name="icon" value="{{ link.icon or '' }}">
+      </div>
+      {% endfor %}
+    </div>
+
+    <button type="button" id="add-row" class="btn btn--ghost btn--sm" style="margin-bottom:24px; cursor:pointer;">
+      + add link
+    </button>
+
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn--primary" type="submit" style="cursor:pointer;">save</button>
+      <a class="btn btn--ghost" href="/links" style="cursor:pointer;">cancel</a>
+    </div>
+
+  </form>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('add-row').addEventListener('click', function() {
+  const row = document.createElement('div');
+  row.className = 'link-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:10px;align-items:center;';
+  row.innerHTML = `
+    <input class="input" type="text" name="title" placeholder="Label (e.g. GitHub)" required>
+    <input class="input" type="url" name="url" placeholder="https://..." required>
+    <button type="button" class="btn btn--danger btn--sm" onclick="this.closest('.link-row').remove()" style="cursor:pointer;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <input type="hidden" name="icon" value="">
+  `;
+  document.getElementById('link-rows').appendChild(row);
+  row.querySelector('input[name="title"]').focus();
+});
+</script>
+{% endblock %}
