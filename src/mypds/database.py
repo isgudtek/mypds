@@ -459,19 +459,22 @@ class Database:
 				raise RuntimeError("unexpected query result")
 
 	def did_by_handle(self, handle: str) -> Optional[str]:
-		return self.con.execute(
+		row = self.con.execute(
 			"SELECT did FROM user WHERE handle=?", (handle,)
-		).get
+		).fetchone()
+		return row[0] if row else None
 
 	def handle_by_did(self, did: str) -> Optional[str]:
-		return self.con.execute(
+		row = self.con.execute(
 			"SELECT handle FROM user WHERE did=?", (did,)
-		).get
+		).fetchone()
+		return row[0] if row else None
 
 	def signing_key_pem_by_did(self, did: str) -> Optional[str]:
-		return self.con.execute(
+		row = self.con.execute(
 			"SELECT signing_key FROM user WHERE did=?", (did,)
-		).get
+		).fetchone()
+		return row[0] if row else None
 
 	def list_repos(
 		self,
