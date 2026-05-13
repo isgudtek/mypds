@@ -4,6 +4,8 @@ A self-hosted ATProto PDS with a full web UI, gallery, blog, file manager, compo
 
 Fork of [millipds](https://github.com/DavidBuchanan314/millipds) by David Buchanan.
 
+> **AI agents:** see [`AGENTS.md`](./AGENTS.md) for a complete step-by-step setup guide — zero to live federated node in one session.
+
 ---
 
 ## What is this?
