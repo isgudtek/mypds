@@ -5,61 +5,13 @@
 {% block content %}
 <div class="container" style="padding-top:32px; padding-bottom:60px;">
 
-  <div class="flex items-center gap-8 mb-16" style="margin-bottom:24px;">
+  <div class="flex items-center gap-8" style="margin-bottom:24px;">
     <h1 style="font-size:1.3rem; font-weight:700;">Dashboard</h1>
     <span class="text-dim mono" style="margin-left:auto;">{{ profile.handle }}</span>
   </div>
 
-  <!-- Stats -->
-  <div class="grid-3" style="margin-bottom:28px;">
-    <div class="stat-card">
-      <div class="stat-card__value">{{ posts|length }}</div>
-      <div class="stat-card__label">recent posts</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-card__value">{{ pages|length }}</div>
-      <div class="stat-card__label">pages</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-card__value">{{ files|length }}</div>
-      <div class="stat-card__label">files</div>
-    </div>
-  </div>
-
-  <!-- Quick actions -->
-  <div class="panel" style="margin-bottom:20px;">
-    <div class="panel__title">quick actions</div>
-    <div class="flex gap-8" style="flex-wrap:wrap;">
-      <a class="btn btn--primary" href="/compose" style="cursor:pointer;">✦ compose post</a>
-      {% if apps.pages %}<a class="btn btn--ghost" href="/pages/new" style="cursor:pointer;">+ new page</a>{% endif %}
-      {% if apps.files %}<a class="btn btn--ghost" href="/files" style="cursor:pointer;">↑ upload file</a>{% endif %}
-      {% if apps.links %}<a class="btn btn--ghost" href="/links/edit" style="cursor:pointer;">⛓ edit links</a>{% endif %}
-    </div>
-  </div>
-
-  <!-- Recent posts -->
-  <div class="panel" style="margin-bottom:20px;">
-    <div class="panel__title">recent posts</div>
-    {% if posts %}
-      {% for post in posts %}
-      <div class="post" style="margin-bottom:8px;">
-        <div class="post__meta">
-          <span>{{ post.ts_human }}</span>
-          <span class="mono" style="color:var(--dim)">{{ post.rkey }}</span>
-        </div>
-        <div class="post__text">{{ post.text }}</div>
-      </div>
-      {% endfor %}
-    {% else %}
-      <div class="empty">
-        <div class="empty__icon">📝</div>
-        No posts yet. <a href="/compose">Write one →</a>
-      </div>
-    {% endif %}
-  </div>
-
   <!-- Apps -->
-  <div class="panel">
+  <div class="panel" style="margin-bottom:24px;">
     <div class="panel__title">apps</div>
     <div class="app-grid">
 
@@ -187,6 +139,80 @@
       </div>
 
     </div>
+  </div>
+
+  <!-- Stats -->
+  <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:12px; margin-bottom:24px;">
+    <a href="/compose" class="stat-card stat-card--link">
+      <div class="stat-card__value">{{ posts|length }}</div>
+      <div class="stat-card__label">posts</div>
+    </a>
+    <a href="/pages" class="stat-card stat-card--link {% if not apps.pages %}stat-card--off{% endif %}">
+      <div class="stat-card__value">{{ pages|length }}</div>
+      <div class="stat-card__label">pages</div>
+    </a>
+    <a href="/files" class="stat-card stat-card--link {% if not apps.files %}stat-card--off{% endif %}">
+      <div class="stat-card__value">{{ files|length }}</div>
+      <div class="stat-card__label">files</div>
+    </a>
+    <a href="/gallery" class="stat-card stat-card--link {% if not apps.gallery %}stat-card--off{% endif %}">
+      <div class="stat-card__value">{{ gallery_count }}</div>
+      <div class="stat-card__label">images</div>
+    </a>
+    <a href="/places" class="stat-card stat-card--link {% if not apps.places %}stat-card--off{% endif %}">
+      <div class="stat-card__value">{{ places_count }}</div>
+      <div class="stat-card__label">places</div>
+    </a>
+    <a href="/links/edit" class="stat-card stat-card--link {% if not apps.links %}stat-card--off{% endif %}">
+      <div class="stat-card__value">{{ links_count }}</div>
+      <div class="stat-card__label">links</div>
+    </a>
+    <a href="/dropbox/inbox" class="stat-card stat-card--link {% if not apps.dropbox %}stat-card--off{% endif %}">
+      <div class="stat-card__value">
+        {{ dropbox_pending }}
+        {% if dropbox_pending > 0 %}<span style="font-size:.7rem; color:var(--red); vertical-align:middle;">●</span>{% endif %}
+      </div>
+      <div class="stat-card__label">inbox</div>
+    </a>
+    <div class="stat-card">
+      <div class="stat-card__value">{{ blob_count }}</div>
+      <div class="stat-card__label">blobs</div>
+    </div>
+  </div>
+
+  <!-- Quick actions -->
+  <div class="panel" style="margin-bottom:20px;">
+    <div class="panel__title">quick actions</div>
+    <div class="flex gap-8" style="flex-wrap:wrap;">
+      <a class="btn btn--primary" href="/compose" style="cursor:pointer;">✦ compose post</a>
+      {% if apps.pages %}<a class="btn btn--ghost" href="/pages/new" style="cursor:pointer;">+ new page</a>{% endif %}
+      {% if apps.files %}<a class="btn btn--ghost" href="/files" style="cursor:pointer;">↑ upload file</a>{% endif %}
+      {% if apps.gallery %}<a class="btn btn--ghost" href="/gallery/upload" style="cursor:pointer;">🖼 upload image</a>{% endif %}
+      {% if apps.places %}<a class="btn btn--ghost" href="/places/new" style="cursor:pointer;">📍 pin place</a>{% endif %}
+      {% if apps.links %}<a class="btn btn--ghost" href="/links/edit" style="cursor:pointer;">⛓ edit links</a>{% endif %}
+      {% if apps.dropbox %}<a class="btn btn--ghost" href="/dropbox/inbox" style="cursor:pointer;">📬 inbox{% if dropbox_pending > 0 %} ({{ dropbox_pending }}){% endif %}</a>{% endif %}
+    </div>
+  </div>
+
+  <!-- Recent posts -->
+  <div class="panel">
+    <div class="panel__title">recent posts</div>
+    {% if posts %}
+      {% for post in posts %}
+      <div class="post" style="margin-bottom:8px;">
+        <div class="post__meta">
+          <span>{{ post.ts_human }}</span>
+          <span class="mono" style="color:var(--dim)">{{ post.rkey }}</span>
+        </div>
+        <div class="post__text">{{ post.text }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">
+        <div class="empty__icon">📝</div>
+        No posts yet. <a href="/compose">Write one →</a>
+      </div>
+    {% endif %}
   </div>
 
 </div>

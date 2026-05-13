@@ -273,7 +273,13 @@ code, pre, .mono { font-family: var(--mono); }
   border: 1px solid var(--border);
   border-radius: var(--r);
   padding: 20px;
+  text-decoration: none;
+  display: block;
 }
+
+.stat-card--link { transition: border-color .15s, background .15s; cursor: pointer; }
+.stat-card--link:hover { border-color: var(--border2); background: var(--surface2); text-decoration: none; }
+.stat-card--off { opacity: .45; }
 
 .stat-card__value {
   font-family: var(--mono);
@@ -281,6 +287,9 @@ code, pre, .mono { font-family: var(--mono); }
   font-weight: 700;
   color: var(--text);
   line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .stat-card__label {

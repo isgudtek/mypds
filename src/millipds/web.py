@@ -340,12 +340,26 @@ async def dashboard(request: web.Request):
 		"SELECT COUNT(*) FROM blob WHERE repo=? AND refcount > 0", (user_id,)
 	).get or 0
 
+	# counts for all app types
+	gallery_count = db.con.execute(
+		"SELECT COUNT(*) FROM record WHERE repo=? AND nsid=?", (user_id, GALLERY_NSID)
+	).fetchone()[0] if user_id else 0
+	places_count = db.con.execute(
+		"SELECT COUNT(*) FROM record WHERE repo=? AND nsid=?", (user_id, PLACES_NSID)
+	).fetchone()[0] if user_id else 0
+	links_count = len(_get_linktree(db, session["did"]))
+	dropbox_pending = len(ws.list_dropbox_items(status="pending"))
+
 	return render(request, "node_dashboard.html", {
 		"profile": profile,
 		"posts": posts,
 		"pages": pages,
 		"files": files,
 		"blob_count": blob_count,
+		"gallery_count": gallery_count,
+		"places_count": places_count,
+		"links_count": links_count,
+		"dropbox_pending": dropbox_pending,
 		"version": version,
 	})
 
