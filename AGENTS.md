@@ -32,10 +32,10 @@ ADMIN_KEY=$(cat /root/mycrabs/taskai/.mycrab_admin_key)
 # Pick a subdomain slug — use the user's name, project name, or ask
 SLUG="alice"   # e.g. alice.mycrab.space
 
-curl -s -X POST https://taskai.mycrab.space/api/mycrab/generate \
+curl -s -X POST https://api.mycrab.space/reserve-domain \
   -H "X-Admin-Key: $ADMIN_KEY" \
   -H "Content-Type: application/json" \
-  -d "{\"subdomain\": \"$SLUG\", \"label\": \"mypds - $SLUG\"}"
+  -d "{\"subdomain\": \"$SLUG\"}"
 ```
 
 Response:
