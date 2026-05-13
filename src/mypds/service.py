@@ -140,10 +140,13 @@ https://github.com/DavidBuchanan314/millipds
 @routes.get("/.well-known/atproto-did")
 async def well_known_atproto_did(request: web.Request):
 	handle = request.host.split(":")[0]  # strip port if present
-	logger.info(f"atproto-did lookup: handle={handle}")
 	db = get_db(request)
 	did = db.did_by_handle(handle)
-	logger.info(f"  -> did={did}")
+
+	# If local request (localhost/127.0.0.1), fall back to PDS own DID
+	if did is None and handle in ("localhost", "127.0.0.1", "::1"):
+		did = db.config["pds_did"]
+
 	if did is None:
 		raise web.HTTPNotFound(text="handle not found")
 	return web.Response(text=did, content_type="text/plain")
