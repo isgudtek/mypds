@@ -350,6 +350,17 @@ async def dashboard(request: web.Request):
 	links_count = len(_get_linktree(db, session["did"]))
 	dropbox_pending = len(ws.list_dropbox_items(status="pending"))
 
+	# total data directory size (MEDIA_DIR is DATA_DIR/media, parent = DATA_DIR)
+	import pathlib
+	data_dir = pathlib.Path(MEDIA_DIR).parent
+	total_bytes = sum(f.stat().st_size for f in data_dir.rglob("*") if f.is_file())
+	if total_bytes < 1024 * 1024:
+		data_size = f"{total_bytes / 1024:.0f} KB"
+	elif total_bytes < 1024 ** 3:
+		data_size = f"{total_bytes / 1024 / 1024:.1f} MB"
+	else:
+		data_size = f"{total_bytes / 1024 ** 3:.2f} GB"
+
 	return render(request, "node_dashboard.html", {
 		"profile": profile,
 		"posts": posts,
@@ -360,6 +371,7 @@ async def dashboard(request: web.Request):
 		"places_count": places_count,
 		"links_count": links_count,
 		"dropbox_pending": dropbox_pending,
+		"data_size": data_size,
 		"version": version,
 	})
 
