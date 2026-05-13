@@ -7,23 +7,27 @@
 <link rel="stylesheet" href="/static/node.css">
 <link rel="icon" type="image/svg+xml" href="/favicon.ico">
 {% block head %}{% endblock %}
+{% if node_settings.accent_color %}
+<style>:root { --red: {{ node_settings.accent_color }}; }</style>
+{% endif %}
 </head>
 <body>
 <div class="site-wrap">
 
 <nav class="nav">
   <div class="container nav__inner">
-    <span class="nav__logo">{{ node_handle or 'node' }}<span>.pds</span></span>
+    <span class="nav__logo">{{ node_settings.nickname or node_handle or 'node' }}<span>.pds</span></span>
     <span class="nav__dot"></span>
     <ul class="nav__links">
       <li><a href="/">home</a></li>
+      {% if apps.pages %}<li><a href="/pages">pages</a></li>{% endif %}
       {% if apps.gallery %}<li><a href="/gallery">gallery</a></li>{% endif %}
       {% if apps.links %}<li><a href="/links">links</a></li>{% endif %}
       {% if session %}
         <li><a href="/dashboard">dashboard</a></li>
         <li><a href="/compose">compose</a></li>
         {% if apps.files %}<li><a href="/files">files</a></li>{% endif %}
-        {% if apps.pages %}<li><a href="/pages">pages</a></li>{% endif %}
+        <li><a href="/settings">settings</a></li>
         <li><a href="/logout">logout</a></li>
       {% else %}
         <li><a href="/login">login</a></li>

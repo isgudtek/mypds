@@ -6,7 +6,7 @@
 
   <div class="flex items-center gap-8" style="margin-bottom:24px;">
     <h1 style="font-size:1.3rem; font-weight:700;">Pages</h1>
-    <a class="btn btn--primary btn--sm" href="/pages/new" style="margin-left:auto;">+ new page</a>
+    {% if session %}<a class="btn btn--primary btn--sm" href="/pages/new" style="margin-left:auto;">+ new page</a>{% endif %}
   </div>
 
   {% if pages %}
@@ -49,13 +49,15 @@
             <td>
               <div class="flex gap-8">
                 {% if p.is_published %}
-                <a class="btn btn--ghost btn--sm" href="/p/{{ p.slug }}" target="_blank">view</a>
+                <a class="btn btn--ghost btn--sm" href="/p/{{ p.slug }}">view</a>
                 {% endif %}
+                {% if session %}
                 <a class="btn btn--ghost btn--sm" href="/pages/{{ p.id }}/edit">edit</a>
                 <form method="post" action="/pages/{{ p.id }}/delete" style="display:inline;"
                       onsubmit="return confirm('Delete {{ p.title }}?')">
                   <button class="btn btn--danger btn--sm" type="submit">delete</button>
                 </form>
+                {% endif %}
               </div>
             </td>
           </tr>
@@ -67,7 +69,7 @@
   {% else %}
   <div class="empty">
     <div class="empty__icon">📄</div>
-    No pages yet. <a href="/pages/new">Create one →</a>
+    No pages yet.{% if session %} <a href="/pages/new">Create one →</a>{% endif %}
   </div>
   {% endif %}
 

@@ -322,6 +322,25 @@ code, pre, .mono { font-family: var(--mono); }
 
 .btn--sm { padding: 5px 10px; font-size: .68rem; }
 
+/* ── Input (alias for form-control) ─────────────────────────────────────── */
+
+.input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: .88rem;
+  padding: 8px 10px;
+  border-radius: var(--r);
+  outline: none;
+  transition: border-color .15s;
+}
+
+.input:focus { border-color: var(--red); }
+
+select.input { cursor: pointer; }
+
 /* ── Forms ───────────────────────────────────────────────────────────────── */
 
 .form-group { margin-bottom: 18px; }
@@ -876,7 +895,7 @@ tr:hover td { background: var(--surface2); }
 .linktree-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 14px 20px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -889,11 +908,85 @@ tr:hover td { background: var(--surface2); }
 }
 
 .linktree-card:hover {
-  border-color: var(--cyan);
+  border-color: var(--red);
   background: var(--surface2);
+  text-decoration: none;
+  color: var(--text);
+}
+
+.linktree-card__icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.linktree-card__icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .linktree-card__title { flex: 1; }
+
+/* ── Link edit row ────────────────────────────────────────────────────────── */
+
+.link-row {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  gap: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.link-row__platform select { font-size: .82rem; }
+
+.link-row__fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+@media (max-width: 580px) {
+  .link-row { grid-template-columns: 1fr auto; }
+  .link-row__platform { grid-column: 1 / -1; }
+  .link-row__fields { grid-template-columns: 1fr; }
+}
+
+/* ── Color swatches (settings) ────────────────────────────────────────────── */
+
+.color-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.color-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform .15s, border-color .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.color-swatch:hover { transform: scale(1.15); }
+
+.color-swatch--active { border-color: #fff; }
+
+.color-swatch--reset {
+  background: var(--surface2);
+  border-color: var(--border2);
+  color: var(--muted);
+}
+
+.color-swatch--reset.color-swatch--active { border-color: var(--cyan); color: var(--cyan); }
 
 /* ── App toggle ───────────────────────────────────────────────────────────── */
 

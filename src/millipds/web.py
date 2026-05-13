@@ -72,9 +72,16 @@ def clear_session_cookie(response: web.Response):
 def render(request: web.Request, template: str, ctx: dict = {}, status: int = 200) -> web.Response:
 	jinja = get_jinja_env(request)
 	session = get_session(request)
-	apps = get_web_store(request).get_all_app_settings()
+	ws = get_web_store(request)
+	apps = ws.get_all_app_settings()
+	_ns = ws.get_all_node_settings()
+	node_settings = {
+		"nickname": _ns.get("nickname", ""),
+		"pfp_url": _ns.get("pfp_url", ""),
+		"accent_color": _ns.get("accent_color", ""),
+	}
 	tmpl = jinja.get_template(template)
-	html = tmpl.render(session=session, apps=apps, **ctx)
+	html = tmpl.render(session=session, apps=apps, node_settings=node_settings, **ctx)
 	resp = web.Response(text=html, content_type="text/html", charset="utf-8", status=status)
 	resp.headers["Content-Security-Policy"] = NODE_CSP
 	resp.headers["X-Frame-Options"] = "DENY"
@@ -562,10 +569,11 @@ async def pages_upload_image(request: web.Request):
 @web_routes.get("/pages")
 async def pages_list(request: web.Request):
 	session = get_session(request)
-	if not session:
-		raise web.HTTPFound("/login")
 	ws = get_web_store(request)
-	return render(request, "node_pages.html", {"pages": ws.list_pages()})
+	all_pages = ws.list_pages()
+	# Public visitors see published pages only; owner sees all
+	pages = all_pages if session else [p for p in all_pages if p["is_published"]]
+	return render(request, "node_pages.html", {"pages": pages})
 
 
 @web_routes.get("/pages/new")
@@ -1066,14 +1074,14 @@ async def links_edit_post(request: web.Request):
 	data = await request.post()
 	titles = data.getall("title", [])
 	urls = data.getall("url", [])
-	icons = data.getall("icon", [])
+	platforms = data.getall("platform", [])
 	links = []
 	for i, (title, url) in enumerate(zip(titles, urls)):
 		title = title.strip()
 		url = url.strip()
 		if title and url:
-			icon = icons[i] if i < len(icons) else ""
-			links.append({"title": title, "url": url, "icon": icon.strip()})
+			platform = platforms[i].strip() if i < len(platforms) else "other"
+			links.append({"title": title, "url": url, "platform": platform})
 	await _save_linktree(request, session, links)
 	raise web.HTTPFound("/links/edit")
 
@@ -1091,3 +1099,34 @@ async def app_toggle(request: web.Request):
 		current = ws.get_app_enabled(app_name)
 		ws.set_app_enabled(app_name, not current)
 	raise web.HTTPFound("/dashboard")
+
+
+# ── Node Settings ─────────────────────────────────────────────────────────────
+
+@web_routes.get("/settings")
+async def settings_page(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	return render(request, "node_settings.html", {"saved": False})
+
+
+@web_routes.post("/settings")
+async def settings_post(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	data = await request.post()
+	ws = get_web_store(request)
+	nickname = data.get("nickname", "").strip()[:64]
+	pfp_url = data.get("pfp_url", "").strip()[:512]
+	accent_color = data.get("accent_color", "").strip()
+	ws.set_node_setting("nickname", nickname)
+	ws.set_node_setting("pfp_url", pfp_url)
+	# Only store valid hex colors
+	import re as _re_local
+	if accent_color and _re_local.match(r'^#[0-9a-fA-F]{6}$', accent_color):
+		ws.set_node_setting("accent_color", accent_color)
+	elif not accent_color:
+		ws.set_node_setting("accent_color", "")
+	return render(request, "node_settings.html", {"saved": True})

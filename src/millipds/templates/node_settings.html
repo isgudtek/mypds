@@ -1,0 +1,130 @@
+{% extends "node_base.html" %}
+{% block title %}settings{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:80px; max-width:540px;">
+
+  <div style="margin-bottom:28px;">
+    <h1 style="font-size:1.3rem; font-weight:700;">Personal Settings</h1>
+    <div class="mono text-dim" style="font-size:.7rem; margin-top:4px;">stored in web.sqlite3 · local to this node</div>
+  </div>
+
+  {% if saved %}
+  <div class="alert alert--success" style="margin-bottom:20px;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         style="vertical-align:middle; margin-right:6px;">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    Settings saved.
+  </div>
+  {% endif %}
+
+  <form method="post" action="/settings">
+
+    <!-- Identity -->
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="panel__title">identity</div>
+
+      <div class="form-group" style="margin-top:12px;">
+        <label for="nickname">public nickname</label>
+        <input id="nickname" class="input" type="text" name="nickname"
+               value="{{ node_settings.nickname }}" placeholder="e.g. Robert — shown instead of @handle"
+               maxlength="64">
+        <div class="mono text-dim" style="font-size:.66rem; margin-top:5px;">
+          shown in nav and on links page instead of your handle
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="pfp_url">profile picture URL</label>
+        <input id="pfp_url" class="input" type="url" name="pfp_url"
+               value="{{ node_settings.pfp_url }}" placeholder="https://example.com/photo.jpg"
+               maxlength="512">
+        <div class="mono text-dim" style="font-size:.66rem; margin-top:5px;">
+          shown on the links page · use an image you host yourself
+        </div>
+        {% if node_settings.pfp_url %}
+        <div style="margin-top:10px;">
+          <img src="{{ node_settings.pfp_url }}" alt="current pfp"
+               style="width:56px; height:56px; border-radius:50%; object-fit:cover; border:1px solid var(--border2);">
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Color scheme -->
+    <div class="panel" style="margin-bottom:24px;">
+      <div class="panel__title">accent color</div>
+      <div style="margin-top:12px; margin-bottom:12px; font-size:.82rem; color:var(--muted);">
+        changes buttons, links and highlights across your node
+      </div>
+
+      <div class="color-presets">
+        {% set presets = [
+          ('#ff0048', 'red'),
+          ('#00d4ff', 'cyan'),
+          ('#a855f7', 'purple'),
+          ('#22c55e', 'green'),
+          ('#f97316', 'orange'),
+          ('#f43f5e', 'rose'),
+          ('#3b82f6', 'blue'),
+          ('#eab308', 'yellow'),
+        ] %}
+        {% for color, name in presets %}
+        <button type="button" class="color-swatch {% if node_settings.accent_color == color %}color-swatch--active{% endif %}"
+                style="background:{{ color }};" title="{{ name }}"
+                onclick="setAccent('{{ color }}')"></button>
+        {% endfor %}
+        <button type="button" class="color-swatch color-swatch--reset {% if not node_settings.accent_color %}color-swatch--active{% endif %}"
+                title="default" onclick="setAccent('')">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="form-group" style="margin-top:14px; display:flex; align-items:center; gap:10px;">
+        <label for="accent_color" style="margin-bottom:0; white-space:nowrap;">custom hex</label>
+        <input id="accent_color" class="input" type="color" name="accent_color"
+               value="{{ node_settings.accent_color or '#ff0048' }}"
+               style="width:48px; height:32px; padding:2px 4px; cursor:pointer;">
+        <span id="accent-hex" class="mono text-dim" style="font-size:.75rem;">
+          {{ node_settings.accent_color or '' }}
+        </span>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn--primary" type="submit" style="cursor:pointer;">save settings</button>
+      <a class="btn btn--ghost" href="/dashboard" style="cursor:pointer;">cancel</a>
+    </div>
+
+  </form>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const colorInput = document.getElementById('accent_color');
+const hexLabel = document.getElementById('accent-hex');
+
+colorInput.addEventListener('input', function() {
+  hexLabel.textContent = this.value;
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('color-swatch--active'));
+});
+
+function setAccent(hex) {
+  colorInput.value = hex || '#ff0048';
+  hexLabel.textContent = hex;
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('color-swatch--active'));
+  const target = hex
+    ? document.querySelector(`.color-swatch[onclick="setAccent('${hex}')"]`)
+    : document.querySelector('.color-swatch--reset');
+  if (target) target.classList.add('color-swatch--active');
+}
+</script>
+{% endblock %}

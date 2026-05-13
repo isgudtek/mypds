@@ -45,6 +45,13 @@ class WebStore:
 				enabled  INTEGER NOT NULL DEFAULT 1
 			)
 		""")
+		# Ensure node_settings table exists
+		self.con.execute("""
+			CREATE TABLE IF NOT EXISTS node_settings (
+				key   TEXT PRIMARY KEY,
+				value TEXT NOT NULL
+			)
+		""")
 		self.con.commit()
 
 	def _init_tables(self):
@@ -83,6 +90,11 @@ class WebStore:
 			CREATE TABLE IF NOT EXISTS app_settings (
 				app_name TEXT PRIMARY KEY,
 				enabled  INTEGER NOT NULL DEFAULT 1
+			);
+
+			CREATE TABLE IF NOT EXISTS node_settings (
+				key   TEXT PRIMARY KEY,
+				value TEXT NOT NULL
 			);
 		""")
 		self.con.commit()
@@ -255,3 +267,21 @@ class WebStore:
 		for r in rows:
 			settings[r["app_name"]] = bool(r["enabled"])
 		return settings
+
+	# ── Node Settings ─────────────────────────────────────────────────────────
+
+	def get_node_setting(self, key: str, default: str = "") -> str:
+		row = self.con.execute("SELECT value FROM node_settings WHERE key=?", (key,)).fetchone()
+		return row["value"] if row else default
+
+	def set_node_setting(self, key: str, value: str):
+		self.con.execute(
+			"INSERT INTO node_settings(key, value) VALUES(?,?) "
+			"ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+			(key, value),
+		)
+		self.con.commit()
+
+	def get_all_node_settings(self) -> Dict[str, str]:
+		rows = self.con.execute("SELECT key, value FROM node_settings").fetchall()
+		return {r["key"]: r["value"] for r in rows}
