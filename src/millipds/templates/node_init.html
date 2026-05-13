@@ -38,7 +38,9 @@
   }
 
   .jingle__crab {
-    font-size: 4rem;
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
     animation: crab-bounce 0.5s ease infinite alternate,
                crab-appear 0.4s ease both;
   }
@@ -49,8 +51,8 @@
   }
 
   @keyframes crab-bounce {
-    from { transform: translateY(0) rotate(-6deg); }
-    to   { transform: translateY(-10px) rotate(6deg); }
+    from { transform: translateY(0) rotate(-3deg); }
+    to   { transform: translateY(-10px) rotate(3deg); }
   }
 
   .jingle__title {
@@ -223,7 +225,7 @@
 
 <!-- Jingle overlay — plays once on first ever load -->
 <div class="jingle" aria-hidden="true">
-  <div class="jingle__crab">🦀</div>
+  <img class="jingle__crab" src="https://mycrab.space/mycrab-logo-tx.webp" alt="mypds">
   <div class="jingle__title">mypds</div>
   <div class="jingle__sub">personal atproto node</div>
   <div class="jingle__bar"><div class="jingle__bar-fill"></div></div>
@@ -232,9 +234,13 @@
 <!-- Login card -->
 <div class="init-wrap">
   <div class="init-header">
-    <div class="init-header__logo">🦀</div>
+    <img src="https://mycrab.space/mycrab-logo-tx.webp" alt="mypds" style="width:56px;height:56px;object-fit:contain;margin-bottom:10px;">
     <div class="init-header__title">Welcome to your PDS</div>
+    {% if profile and profile.handle %}
+    <div class="init-header__sub" style="color:var(--text);font-size:.8rem;margin-top:4px;">{{ profile.handle }}</div>
+    {% else %}
     <div class="init-header__sub">first run setup</div>
+    {% endif %}
   </div>
 
   <div style="text-align:center;">

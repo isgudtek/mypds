@@ -162,7 +162,9 @@ async def homepage(request: web.Request):
 	if not ws.is_initialized():
 		session = get_session(request)
 		if not session:
-			return render(request, "node_init.html", {})
+			db = get_db(request)
+			profile = get_node_profile(db)
+			return render(request, "node_init.html", {"profile": profile})
 
 	db = get_db(request)
 	profile = get_node_profile(db)
