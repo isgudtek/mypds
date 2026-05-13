@@ -26,8 +26,9 @@ If the user says **"use mycrab"**, **"mycrab skill"**, or any variant — jump d
 ### A1 — Provision a new crab (subdomain)
 
 ```bash
-# Admin key is at /root/mycrabs/taskai/.mycrab_admin_key on the mycrab server
-ADMIN_KEY=$(cat /root/mycrabs/taskai/.mycrab_admin_key)
+# The mycrab admin key is provided by the mycrab.space operator.
+# Store it in a local env var or secrets manager — never hardcode it.
+ADMIN_KEY="<your-mycrab-admin-key>"
 
 # Pick a subdomain slug — use the user's name, project name, or ask
 SLUG="alice"   # e.g. alice.mycrab.space
