@@ -1,16 +1,16 @@
-"""millipds CLI
+"""mypds CLI
 
 Usage:
-  millipds init <hostname> [--dev | --sandbox] [--auth_host=HOST]
-  millipds config [--pds_pfx=URL] [--pds_did=DID] [--auth_pfx=URL] [--bsky_appview_pfx=URL] [--bsky_appview_did=DID]
-  millipds account create <did> <handle> [--unsafe_password=PW] [--signing_key=PEM]
-  millipds run [--sock_path=PATH] [--listen_host=HOST] [--listen_port=PORT]
-  millipds util keygen [--p256 | --k256]
-  millipds util print_pubkey <pem>
-  millipds util plcgen --genesis_json=PATH --rotation_key=PEM --handle=HANDLE --pds_host=URL --repo_pubkey=DIDKEY
-  millipds util plcsign --unsigned_op=PATH --rotation_key=PEM [--prev_op=PATH]
-  millipds (-h | --help)
-  millipds --version
+  mypds init <hostname> [--dev | --sandbox] [--auth_host=HOST]
+  mypds config [--pds_pfx=URL] [--pds_did=DID] [--auth_pfx=URL] [--bsky_appview_pfx=URL] [--bsky_appview_did=DID]
+  mypds account create <did> <handle> [--unsafe_password=PW] [--signing_key=PEM]
+  mypds run [--sock_path=PATH] [--listen_host=HOST] [--listen_port=PORT]
+  mypds util keygen [--p256 | --k256]
+  mypds util print_pubkey <pem>
+  mypds util plcgen --genesis_json=PATH --rotation_key=PEM --handle=HANDLE --pds_host=URL --repo_pubkey=DIDKEY
+  mypds util plcsign --unsigned_op=PATH --rotation_key=PEM [--prev_op=PATH]
+  mypds (-h | --help)
+  mypds --version
 
 Init:
   Initialise the database. Must be done before any other commands will work.
@@ -35,7 +35,7 @@ Config:
 
 Account Create:
   Create a new user account on the PDS. Bring your own DID and corresponding
-  handle - millipds will not (yet?) attempt to validate either.
+  handle - mypds will not (yet?) attempt to validate either.
   You'll be prompted for a password interactively.
 
   --unsafe_password=PW  Specify password non-iteractively, for use in test scripts etc.
@@ -85,12 +85,12 @@ logging.basicConfig(level=logging.DEBUG)  # TODO: make this configurable?
 
 def main():
 	"""
-	This is the entrypoint for the `millipds` command (declared in project.scripts)
+	This is the entrypoint for the `mypds` command (declared in project.scripts)
 	"""
 
 	args = docopt(
 		__doc__,
-		version=f"millipds version {importlib.metadata.version('millipds')}",
+		version=f"mypds version {importlib.metadata.version('mypds')}",
 	)
 
 	if args["init"]:
@@ -258,7 +258,7 @@ def main():
 
 
 """
-This is the entrypoint for python3 -m millipds
+This is the entrypoint for python3 -m mypds
 """
 if __name__ == "__main__":
 	main()

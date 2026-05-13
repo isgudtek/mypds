@@ -25,9 +25,10 @@ from .web_store import WebStore, MEDIA_DIR
 
 web_routes = web.RouteTableDef()
 
-# ── App key for WebStore ───────────────────────────────────────────────────────
+# ── App keys ──────────────────────────────────────────────────────────────────
 
 MILLIPDS_WEB_STORE = web.AppKey("MILLIPDS_WEB_STORE", WebStore)
+MYPDS_PLUGINS = web.AppKey("MYPDS_PLUGINS", list)  # list of loaded plugin app names
 
 COOKIE_NAME = "mpds_sid"
 NODE_CSP = (
@@ -87,8 +88,12 @@ def render(request: web.Request, template: str, ctx: dict = {}, status: int = 20
 		"pfp_url": _ns.get("pfp_url", ""),
 		"accent_color": _ns.get("accent_color", ""),
 	}
+	try:
+		plugin_names = request.app[MYPDS_PLUGINS]
+	except KeyError:
+		plugin_names = []
 	tmpl = jinja.get_template(template)
-	html = tmpl.render(session=session, apps=apps, node_settings=node_settings, **ctx)
+	html = tmpl.render(session=session, apps=apps, node_settings=node_settings, plugin_names=plugin_names, **ctx)
 	resp = web.Response(text=html, content_type="text/html", charset="utf-8", status=status)
 	resp.headers["Content-Security-Policy"] = NODE_CSP
 	resp.headers["X-Frame-Options"] = "DENY"
@@ -1051,9 +1056,9 @@ async def gallery_delete(request: web.Request):
 def _get_version() -> str:
 	try:
 		import importlib.metadata
-		return f"millipds v{importlib.metadata.version('millipds')}"
+		return f"mypds v{importlib.metadata.version('mypds')}"
 	except Exception:
-		return "millipds"
+		return "mypds"
 
 
 # ── Linktree ──────────────────────────────────────────────────────────────────

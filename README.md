@@ -53,7 +53,7 @@ mypds run --pds-pfx https://your.domain --pds-did-plc https://plc.directory
 
 ```
 mypds/
-├── src/millipds/
+├── src/mypds/
 │   ├── web.py          # all node UI routes (home, compose, gallery, pages, files, node-info)
 │   ├── web_store.py    # web.sqlite3 (sessions, pages, media)
 │   ├── atproto_repo.py # MST writes, firehose broadcast
@@ -63,7 +63,7 @@ mypds/
 ```
 
 Storage: two SQLite databases via `apsw`
-- `millipds.db` — ATProto repo (MST, blobs, DIDs, auth)
+- `mypds.db` — ATProto repo (MST, blobs, DIDs, auth)
 - `web.sqlite3` — pages, sessions, media metadata
 
 ---

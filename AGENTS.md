@@ -305,7 +305,7 @@ systemctl restart mypds
 /opt/mypds/
 ├── .venv/              # Python virtualenv
 ├── repo_key.pem        # ATProto repo signing key (keep secret, but OK on server)
-├── millipds.db         # ATProto repo: MST, blobs, DIDs, auth
+├── mypds.db         # ATProto repo: MST, blobs, DIDs, auth
 └── web.sqlite3         # Web layer: sessions, pages, media metadata
 
 # Store these offline, never on server:

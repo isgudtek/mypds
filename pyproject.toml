@@ -55,7 +55,7 @@ Homepage = "https://github.com/isgudtek/mypds"
 Issues = "https://github.com/isgudtek/mypds/issues"
 
 [project.scripts]
-mypds = "millipds.__main__:main"
+mypds = "mypds.__main__:main"
 
 [tool.ruff]
 line-length = 80

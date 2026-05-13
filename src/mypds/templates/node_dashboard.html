@@ -138,6 +138,11 @@
         </form>
       </div>
 
+      {# plugin app tiles — auto-injected from plugins/<name>/tile.html #}
+      {% for pname in plugin_names %}
+        {% include "plugin/" + pname + "/tile.html" ignore missing %}
+      {% endfor %}
+
     </div>
   </div>
 

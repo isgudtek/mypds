@@ -17,7 +17,7 @@ import aiohttp
 from aiohttp_middlewares.cors import cors_middleware
 from aiohttp import web
 import jwt
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, ChoiceLoader, PrefixLoader
 
 import cbrrr
 
@@ -32,7 +32,8 @@ from .appview_proxy import service_proxy
 from .auth_bearer import authenticated, verify_symmetric_token
 from .app_util import *
 from .did import DIDResolver
-from .web import web_routes, MILLIPDS_WEB_STORE
+import importlib
+from .web import web_routes, MILLIPDS_WEB_STORE, MYPDS_PLUGINS
 from .web_store import WebStore
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ routes = web.RouteTableDef()
 
 
 def get_version_string() -> str:
-	return f"millipds v{importlib.metadata.version('millipds')}"
+	return f"mypds v{importlib.metadata.version('mypds')}"
 
 
 PROXY_OVERRIDE_PATHS = [
@@ -488,6 +489,24 @@ async def server_get_session(request: web.Request):
 	return web.json_response(session_info(request))
 
 
+def _discover_plugins() -> dict:
+	"""Scan src/mypds/plugins/ and load any valid plugin packages."""
+	plugins_dir = Path(__file__).parent / "plugins"
+	plugins = {}
+	if not plugins_dir.exists():
+		return plugins
+	for item in sorted(plugins_dir.iterdir()):
+		if item.is_dir() and (item / "__init__.py").exists() and not item.name.startswith("_"):
+			try:
+				mod = importlib.import_module(f"mypds.plugins.{item.name}")
+				if hasattr(mod, "APP_NAME") and hasattr(mod, "routes"):
+					plugins[mod.APP_NAME] = mod
+					logger.info(f"Loaded plugin: {mod.APP_NAME}")
+			except Exception as e:
+				logger.warning(f"Failed to load plugin '{item.name}': {e}")
+	return plugins
+
+
 def construct_app(
 	routes, db: database.Database, client: aiohttp.ClientSession
 ) -> web.Application:
@@ -504,10 +523,26 @@ def construct_app(
 
 	did_resolver = DIDResolver(client, static_config.PLC_DIRECTORY_HOST)
 
-	# Set up Jinja2 template environment
+	# Discover plugins and register their app names
+	plugins = _discover_plugins()
+	for app_name in plugins:
+		if app_name not in WebStore.KNOWN_APPS:
+			WebStore.KNOWN_APPS.append(app_name)
+
+	# Set up Jinja2 template environment with plugin template dirs
 	template_dir = Path(__file__).parent / "templates"
+	plugin_loaders = {}
+	for app_name, plugin_mod in plugins.items():
+		plugin_tmpl_dir = Path(plugin_mod.__file__).parent / "templates"
+		if plugin_tmpl_dir.exists():
+			plugin_loaders[f"plugin/{app_name}"] = FileSystemLoader(str(plugin_tmpl_dir))
+
+	jinja_loader = (
+		ChoiceLoader([FileSystemLoader(str(template_dir)), PrefixLoader(plugin_loaders)])
+		if plugin_loaders else FileSystemLoader(str(template_dir))
+	)
 	jinja_env = Environment(
-		loader=FileSystemLoader(template_dir),
+		loader=jinja_loader,
 		autoescape=True,
 		auto_reload=False,  # Templates loaded once at startup
 	)
@@ -572,6 +607,7 @@ def construct_app(
 	app[MILLIPDS_DID_RESOLVER] = did_resolver
 	app[MILLIPDS_JINJA_ENV] = jinja_env
 	app[MILLIPDS_WEB_STORE] = WebStore()
+	app[MYPDS_PLUGINS] = list(plugins.keys())
 
 	# Static file serving
 	static_dir = Path(__file__).parent / "static"
@@ -579,6 +615,10 @@ def construct_app(
 
 	# Web UI routes (registered before ATProto routes so / is ours)
 	app.add_routes(web_routes)
+
+	# Plugin routes
+	for plugin_mod in plugins.values():
+		app.add_routes(plugin_mod.routes)
 
 	# ATProto protocol routes
 	app.add_routes(routes)
@@ -606,7 +646,7 @@ async def run(
 	port: int,
 ):
 	"""
-	This gets invoked via millipds.__main__.py
+	This gets invoked via mypds.__main__.py
 	"""
 
 	app = construct_app(routes, db, client)
