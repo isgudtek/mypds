@@ -149,15 +149,27 @@ curl "https://$HANDLE/.well-known/atproto-did"
 
 ---
 
-## Step 4 — Create the account
+## Step 4 — Initialize the database
 
 ```bash
 source /opt/mypds/.venv/bin/activate
 
+# Initialize: sets pds_did, creates tables
+mypds init "$DOMAIN"
+
+# Optional: if you have a pre-generated DID, set it now:
+# python3 -c "import sqlite3; con=sqlite3.connect('/opt/mypds/mypds.db'); con.execute('UPDATE config SET pds_did=?', ('did:plc:xxx',)); con.commit()"
+```
+
+The `init` command sets `pds_did = did:web:<DOMAIN>` automatically. The database is now ready.
+
+---
+
+## Step 4b — Create the account
+
+```bash
 mypds account create "$DID" "$HANDLE" \
   --signing_key=/opt/mypds/repo_key.pem \
-  --pds-pfx="$PDS_URL" \
-  --pds-did-plc=https://plc.directory \
   --unsafe_password=changeme123
 ```
 
@@ -170,8 +182,10 @@ Default password is `changeme123` — tell the user to change it after first log
 ### Quick start (foreground / testing)
 ```bash
 source /opt/mypds/.venv/bin/activate
-mypds run --pds-pfx="$PDS_URL" --pds-did-plc=https://plc.directory --port=3030
+mypds run --port=3030
 ```
+
+All config (pds_did, pds_pfx, etc.) is read from the DB created in Step 4. No flags needed.
 
 ### Production — systemd service
 
@@ -186,7 +200,7 @@ Type=simple
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=/opt/mypds
-ExecStart=/opt/mypds/.venv/bin/mypds run --pds-pfx=$PDS_URL --pds-did-plc=https://plc.directory --port=3030
+ExecStart=/opt/mypds/.venv/bin/mypds run --port=3030
 
 [Install]
 WantedBy=multi-user.target
@@ -195,6 +209,11 @@ EOF
 systemctl daemon-reload
 systemctl enable --now mypds
 systemctl status mypds
+```
+
+Verify the server is responding:
+```bash
+curl -s http://localhost:3030/xrpc/com.atproto.server.describeServer | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'DID: {d[\"did\"]}')"
 ```
 
 ---
