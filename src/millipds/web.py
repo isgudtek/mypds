@@ -32,10 +32,10 @@ MILLIPDS_WEB_STORE = web.AppKey("MILLIPDS_WEB_STORE", WebStore)
 COOKIE_NAME = "mpds_sid"
 NODE_CSP = (
 	"default-src 'self'; "
-	"style-src 'self' 'unsafe-inline'; "
-	"script-src 'self' 'unsafe-inline'; "
+	"style-src 'self' 'unsafe-inline' https://unpkg.com; "
+	"script-src 'self' 'unsafe-inline' https://unpkg.com; "
 	"img-src 'self' data: blob: https:; "
-	"connect-src 'self'; "
+	"connect-src 'self' https://nominatim.openstreetmap.org; "
 	"font-src 'self' data:; "
 	"frame-ancestors 'none'"
 )
@@ -162,7 +162,8 @@ async def homepage(request: web.Request):
 	pages = [p for p in ws.list_pages() if p["is_published"]] if apps.get("pages", True) else []
 	files = [f for f in ws.list_files() if f["is_public"]] if apps.get("files", True) else []
 	gallery = _get_gallery(db, profile["did"], limit=6) if (profile["did"] and apps.get("gallery", True)) else []
-	links = _get_linktree(db, profile["did"]) if (profile["did"] and apps.get("links", True)) else []
+	links  = _get_linktree(db, profile["did"]) if (profile["did"] and apps.get("links", True)) else []
+	places = _get_places(db, profile["did"])[:3] if (profile["did"] and apps.get("places", True)) else []
 	# Note: apps also injected by render() — not passed explicitly to avoid duplicate kwarg
 	version = _get_version()
 
@@ -173,6 +174,7 @@ async def homepage(request: web.Request):
 		"files": files,
 		"gallery": gallery,
 		"links": links,
+		"places": places,
 		"version": version,
 	})
 
@@ -807,8 +809,9 @@ async def _announce_page(request: web.Request, session: dict, title: str, body: 
 # Any ATProto client can read it at:
 #   at://<did>/pub.gallery.image/<rkey>
 
-GALLERY_NSID = "pub.gallery.image"
+GALLERY_NSID  = "pub.gallery.image"
 LINKTREE_NSID = "pub.social.linktree"
+PLACES_NSID   = "pub.places.pin"
 
 
 def _store_blob(db, did: str, data: bytes, mime: str):
@@ -1084,6 +1087,167 @@ async def links_edit_post(request: web.Request):
 			links.append({"title": title, "url": url, "platform": platform})
 	await _save_linktree(request, session, links)
 	raise web.HTTPFound("/links/edit")
+
+
+# ── Places ────────────────────────────────────────────────────────────────────
+#
+# Lexicon: pub.places.pin
+# Each record = one map pin with name, description, lat, lng, tags, optional URL.
+# Pins are stored in the user's ATProto repo — portable + firehose-broadcastable.
+
+def _get_places(db, did: str) -> list:
+	"""Fetch pub.places.pin records from the ATProto repo."""
+	user_id = db.con.execute("SELECT id FROM user WHERE did=?", (did,)).get
+	if user_id is None:
+		return []
+	rows = db.con.execute(
+		"SELECT rkey, value FROM record WHERE repo=? AND nsid=? ORDER BY rkey DESC",
+		(user_id, PLACES_NSID),
+	).fetchall()
+	places = []
+	for rkey, value in rows:
+		try:
+			rec = cbrrr.decode_dag_cbor(value)
+			places.append({
+				"rkey": rkey,
+				"name": rec.get("name", ""),
+				"description": rec.get("description", ""),
+				"lat": float(rec.get("lat", 0)),
+				"lng": float(rec.get("lng", 0)),
+				"url": rec.get("url", ""),
+				"tags": rec.get("tags", []),
+				"created_at": rec.get("createdAt", ""),
+				"ts_human": format_ts(rec.get("createdAt", "")),
+				"at_uri": f"at://{did}/{PLACES_NSID}/{rkey}",
+			})
+		except Exception:
+			pass
+	return places
+
+
+async def _announce_place(request: web.Request, session: dict, name: str, description: str, lat: float, lng: float):
+	"""Post a bsky ping about a new place pin."""
+	db = get_db(request)
+	profile = get_node_profile(db)
+	handle = profile.get("handle", "")
+
+	maps_url = f"https://www.openstreetmap.org/?mlat={lat}&mlon={lng}&zoom=15"
+	places_url = f"https://{handle}/places"
+
+	body = f"📍 {name}"
+	if description:
+		body += f"\n{description[:160]}"
+	body += f"\n\n{maps_url}"
+
+	url_start = len(body.encode()) - len(maps_url.encode())
+	url_end = len(body.encode())
+
+	writes = [{
+		"$type": "com.atproto.repo.applyWrites#create",
+		"collection": "app.bsky.feed.post",
+		"value": {
+			"$type": "app.bsky.feed.post",
+			"text": body,
+			"createdAt": util.iso_string_now(),
+			"langs": ["en"],
+			"facets": [{
+				"$type": "app.bsky.richtext.facet",
+				"index": {
+					"$type": "app.bsky.richtext.facet#byteSlice",
+					"byteStart": url_start,
+					"byteEnd": url_end,
+				},
+				"features": [{"$type": "app.bsky.richtext.facet#link", "uri": maps_url}],
+			}],
+		},
+	}]
+	res, seq, fbytes = repo_ops.apply_writes(db, session["did"], writes, None)
+	await atproto_repo.firehose_broadcast(request, (seq, fbytes))
+
+
+@web_routes.get("/places")
+async def places_page(request: web.Request):
+	ws = get_web_store(request)
+	if not ws.get_app_enabled("places"):
+		raise web.HTTPNotFound()
+	db = get_db(request)
+	profile = get_node_profile(db)
+	places = _get_places(db, profile["did"]) if profile["did"] else []
+	return render(request, "node_places.html", {"profile": profile, "places": places})
+
+
+@web_routes.get("/places/new")
+async def places_new_page(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	return render(request, "node_places_new.html", {"error": None})
+
+
+@web_routes.post("/places/new")
+async def places_new_post(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+
+	data = await request.post()
+	name        = data.get("name", "").strip()
+	description = data.get("description", "").strip()
+	lat_s       = data.get("lat", "").strip()
+	lng_s       = data.get("lng", "").strip()
+	url         = data.get("url", "").strip()
+	tags_raw    = data.get("tags", "").strip()
+	announce    = data.get("announce") == "1"
+
+	if not name or not lat_s or not lng_s:
+		return render(request, "node_places_new.html", {"error": "Name and location required"})
+
+	try:
+		lat = float(lat_s)
+		lng = float(lng_s)
+		if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+			raise ValueError()
+	except ValueError:
+		return render(request, "node_places_new.html", {"error": "Invalid coordinates"})
+
+	tags = [t.strip() for t in tags_raw.replace(",", " ").split() if t.strip()]
+	rkey = util.tid_now()
+	record = {
+		"$type": PLACES_NSID,
+		"name": name,
+		"lat": lat,
+		"lng": lng,
+		"createdAt": util.iso_string_now(),
+	}
+	if description: record["description"] = description
+	if url:         record["url"] = url
+	if tags:        record["tags"] = tags
+
+	db = get_db(request)
+	writes = [{"$type": "com.atproto.repo.applyWrites#create", "collection": PLACES_NSID, "rkey": rkey, "value": record}]
+	res, seq, fbytes = repo_ops.apply_writes(db, session["did"], writes, None)
+	await atproto_repo.firehose_broadcast(request, (seq, fbytes))
+
+	if announce:
+		try:
+			await _announce_place(request, session, name, description, lat, lng)
+		except Exception:
+			pass
+
+	raise web.HTTPFound("/places")
+
+
+@web_routes.post("/places/{rkey}/delete")
+async def places_delete(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	rkey = request.match_info["rkey"]
+	db = get_db(request)
+	writes = [{"$type": "com.atproto.repo.applyWrites#delete", "collection": PLACES_NSID, "rkey": rkey}]
+	res, seq, fbytes = repo_ops.apply_writes(db, session["did"], writes, None)
+	await atproto_repo.firehose_broadcast(request, (seq, fbytes))
+	raise web.HTTPFound("/places")
 
 
 # ── App toggle ────────────────────────────────────────────────────────────────

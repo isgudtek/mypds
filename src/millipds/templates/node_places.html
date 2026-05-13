@@ -1,0 +1,212 @@
+{% extends "node_base.html" %}
+{% block title %}places{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+#places-map {
+  height: calc(100vh - 56px);
+  width: 100%;
+  background: var(--surface);
+  z-index: 0;
+}
+.map-sidebar {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  width: 300px;
+  height: calc(100vh - 56px);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+}
+.map-sidebar__header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.map-sidebar__title {
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex: 1;
+}
+.pin-list { flex: 1; overflow-y: auto; }
+.pin-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .12s;
+}
+.pin-item:hover { background: var(--surface2); }
+.pin-item__name {
+  font-size: .88rem;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.pin-item__desc {
+  font-size: .76rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
+}
+.pin-item__meta {
+  font-family: var(--mono);
+  font-size: .65rem;
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-wrap {
+  margin-right: 300px;
+}
+@media (max-width: 660px) {
+  .map-sidebar { width: 100%; height: 40vh; top: auto; bottom: 0; border-left: none; border-top: 1px solid var(--border); }
+  .map-wrap { margin-right: 0; }
+  #places-map { height: calc(60vh - 56px); }
+}
+/* Leaflet dark skin patch */
+.leaflet-tile { filter: brightness(.85) invert(1) contrast(.9) hue-rotate(200deg) saturate(.4) brightness(.85); }
+.leaflet-container { background: #1a1a2e; }
+.leaflet-popup-content-wrapper {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+}
+.leaflet-popup-tip { background: var(--surface); }
+.leaflet-popup-content { margin: 14px 18px; }
+.popup-name { font-size: .95rem; font-weight: 700; margin-bottom: 6px; }
+.popup-desc { font-size: .8rem; color: var(--muted); margin-bottom: 8px; }
+.popup-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="map-wrap">
+  <div id="places-map"></div>
+</div>
+
+<div class="map-sidebar">
+  <div class="map-sidebar__header">
+    <span class="map-sidebar__title">{{ places|length }} place{{ 's' if places|length != 1 else '' }}</span>
+    {% if session %}
+    <a class="btn btn--primary btn--sm" href="/places/new" style="cursor:pointer;">+ pin</a>
+    {% endif %}
+  </div>
+
+  {% if places %}
+  <div class="pin-list">
+    {% for p in places %}
+    <div class="pin-item" onclick="flyTo({{ p.lat }}, {{ p.lng }}, '{{ p.rkey }}')" data-rkey="{{ p.rkey }}">
+      <div class="pin-item__name">{{ p.name }}</div>
+      {% if p.description %}<div class="pin-item__desc">{{ p.description }}</div>{% endif %}
+      <div class="pin-item__meta">
+        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        {{ p.ts_human }}
+        {% if p.tags %}
+        · {% for t in p.tags[:2] %}<span style="color:var(--cyan);">#{{ t }}</span>{% if not loop.last %} {% endif %}{% endfor %}
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty" style="padding:32px 16px;">
+    <div class="empty__icon">📍</div>
+    No pins yet.
+    {% if session %}<br><a href="/places/new">Add one →</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+const PLACES = {{ places | tojson }};
+
+// Default center: if there are places use their center, else world view
+let initLat = 35.9, initLng = 14.5, initZoom = 4;
+if (PLACES.length === 1) {
+  initLat = PLACES[0].lat; initLng = PLACES[0].lng; initZoom = 13;
+} else if (PLACES.length > 1) {
+  initLat = PLACES.reduce((s, p) => s + p.lat, 0) / PLACES.length;
+  initLng = PLACES.reduce((s, p) => s + p.lng, 0) / PLACES.length;
+  initZoom = 5;
+}
+
+const map = L.map('places-map').setView([initLat, initLng], initZoom);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://openstreetmap.org/copyright" style="color:#888">OpenStreetMap</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+// Custom marker icon
+const pinIcon = L.divIcon({
+  html: `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 24 31">
+    <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 19 12 19s12-10 12-19C24 5.373 18.627 0 12 0z"
+          fill="var(--red, #ff0048)" opacity=".9"/>
+    <circle cx="12" cy="12" r="5" fill="#fff" opacity=".9"/>
+  </svg>`,
+  className: '',
+  iconSize: [28, 36],
+  iconAnchor: [14, 36],
+  popupAnchor: [0, -38],
+});
+
+const markers = {};
+
+PLACES.forEach(p => {
+  const tags = p.tags && p.tags.length ? p.tags.map(t => `<span style="color:var(--cyan);font-size:.72rem;">#${t}</span>`).join(' ') : '';
+  const deleteBtn = {{ 'true' if session else 'false' }}
+    ? `<form method="post" action="/places/${p.rkey}/delete" style="display:inline;"
+            onsubmit="return confirm('Delete ${p.name}?')">
+         <button class="btn btn--danger btn--sm" type="submit" style="cursor:pointer;">delete</button>
+       </form>`
+    : '';
+  const urlBtn = p.url
+    ? `<a class="btn btn--ghost btn--sm" href="${p.url}" target="_blank" rel="noopener" style="cursor:pointer;">visit ↗</a>`
+    : '';
+  const osmBtn = `<a class="btn btn--ghost btn--sm" href="https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lng}&zoom=15"
+                     target="_blank" rel="noopener" style="cursor:pointer;">osm ↗</a>`;
+
+  const popup = `
+    <div class="popup-name">${p.name}</div>
+    ${p.description ? `<div class="popup-desc">${p.description}</div>` : ''}
+    ${tags ? `<div style="margin-bottom:8px;">${tags}</div>` : ''}
+    <div style="font-family:var(--mono);font-size:.65rem;color:var(--dim);margin-bottom:10px;">
+      ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)} · ${p.ts_human}
+    </div>
+    <div class="popup-actions">${osmBtn}${urlBtn}${deleteBtn}</div>
+  `;
+
+  const m = L.marker([p.lat, p.lng], {icon: pinIcon}).addTo(map).bindPopup(popup, {maxWidth: 260});
+  markers[p.rkey] = m;
+});
+
+function flyTo(lat, lng, rkey) {
+  map.flyTo([lat, lng], Math.max(map.getZoom(), 13), {duration: .8});
+  setTimeout(() => { if (markers[rkey]) markers[rkey].openPopup(); }, 900);
+  // Highlight sidebar item
+  document.querySelectorAll('.pin-item').forEach(el => el.style.background = '');
+  const el = document.querySelector(`.pin-item[data-rkey="${rkey}"]`);
+  if (el) el.style.background = 'var(--surface2)';
+}
+</script>
+{% endblock %}

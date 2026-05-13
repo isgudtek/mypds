@@ -245,7 +245,7 @@ class WebStore:
 
 	# ── App Settings ──────────────────────────────────────────────────────────
 
-	KNOWN_APPS = ["compose", "pages", "files", "gallery", "links"]
+	KNOWN_APPS = ["compose", "pages", "files", "gallery", "links", "places"]
 
 	def get_app_enabled(self, app_name: str) -> bool:
 		row = self.con.execute(

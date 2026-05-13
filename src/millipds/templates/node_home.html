@@ -87,6 +87,20 @@
       </div>
       {% endif %}
 
+      {% if places and apps.places %}
+      <div class="panel">
+        <div class="panel__title"><a href="/places" style="color:inherit;">places</a></div>
+        {% for p in places %}
+        <div style="padding:6px 0; border-bottom:1px solid var(--border); font-size:.82rem;">
+          <a href="/places" style="color:var(--text);">
+            📍 {{ p.name }}
+          </a>
+          {% if p.description %}<div style="font-size:.72rem; color:var(--muted);">{{ p.description[:60] }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       {% if links and apps.links %}
       <div class="panel">
         <div class="panel__title"><a href="/links" style="color:inherit;">links</a></div>
