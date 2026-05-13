@@ -1,0 +1,77 @@
+{% extends "node_base.html" %}
+{% block title %}new event{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:40px; max-width:480px;">
+  <h1 style="font-size:1.1rem; font-weight:700; margin-bottom:24px;">Add event</h1>
+
+  {% if error %}
+  <div class="alert alert--error" style="margin-bottom:16px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/planner/new" style="display:flex; flex-direction:column; gap:14px;">
+
+    <div class="field">
+      <label style="font-size:.8rem; color:var(--muted); display:block; margin-bottom:4px;">Title *</label>
+      <input name="title" type="text" placeholder="Event title" autofocus
+             style="width:100%; background:var(--surface); border:1px solid var(--border2);
+                    color:var(--text); border-radius:var(--r); padding:8px 10px; font-size:.9rem;">
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div class="field">
+        <label style="font-size:.8rem; color:var(--muted); display:block; margin-bottom:4px;">Day</label>
+        <select name="day"
+                style="width:100%; background:var(--surface); border:1px solid var(--border2);
+                       color:var(--text); border-radius:var(--r); padding:8px 10px; font-size:.9rem; cursor:pointer;">
+          <option value="mon" {% if day=='mon' %}selected{% endif %}>Monday</option>
+          <option value="tue" {% if day=='tue' %}selected{% endif %}>Tuesday</option>
+          <option value="wed" {% if day=='wed' %}selected{% endif %}>Wednesday</option>
+          <option value="thu" {% if day=='thu' %}selected{% endif %}>Thursday</option>
+          <option value="fri" {% if day=='fri' %}selected{% endif %}>Friday</option>
+          <option value="sat" {% if day=='sat' %}selected{% endif %}>Saturday</option>
+          <option value="sun" {% if day=='sun' %}selected{% endif %}>Sunday</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label style="font-size:.8rem; color:var(--muted); display:block; margin-bottom:4px;">Time</label>
+        <input name="time" type="time"
+               style="width:100%; background:var(--surface); border:1px solid var(--border2);
+                      color:var(--text); border-radius:var(--r); padding:8px 10px; font-size:.9rem; cursor:pointer;">
+      </div>
+    </div>
+
+    <div class="field">
+      <label style="font-size:.8rem; color:var(--muted); display:block; margin-bottom:4px;">Notes</label>
+      <textarea name="notes" rows="3" placeholder="Optional notes"
+                style="width:100%; background:var(--surface); border:1px solid var(--border2);
+                       color:var(--text); border-radius:var(--r); padding:8px 10px;
+                       font-size:.9rem; resize:vertical;"></textarea>
+    </div>
+
+    <div class="field">
+      <label style="font-size:.8rem; color:var(--muted); display:block; margin-bottom:8px;">Color</label>
+      <div style="display:flex; gap:10px;">
+        <label style="cursor:pointer; display:flex; align-items:center; gap:5px; font-size:.85rem;">
+          <input type="radio" name="color" value="cyan" checked style="cursor:pointer;">
+          <span style="color:var(--cyan);">&#9632;</span> cyan
+        </label>
+        <label style="cursor:pointer; display:flex; align-items:center; gap:5px; font-size:.85rem;">
+          <input type="radio" name="color" value="red" style="cursor:pointer;">
+          <span style="color:var(--red);">&#9632;</span> red
+        </label>
+        <label style="cursor:pointer; display:flex; align-items:center; gap:5px; font-size:.85rem;">
+          <input type="radio" name="color" value="purple" style="cursor:pointer;">
+          <span style="color:var(--purple);">&#9632;</span> purple
+        </label>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:4px;">
+      <button class="btn btn--primary" type="submit" style="cursor:pointer;">save event</button>
+      <a class="btn btn--ghost" href="/planner" style="cursor:pointer;">cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

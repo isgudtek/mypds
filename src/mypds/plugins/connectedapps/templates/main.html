@@ -1,0 +1,141 @@
+{% extends "node_base.html" %}
+{% block title %}connected apps{% endblock %}
+
+{% block head %}
+<style>
+.apps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+.app-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 16px;
+}
+.app-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.app-card__favicon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--surface2);
+}
+.app-card__domain {
+  font-weight: 700;
+  font-size: .95rem;
+  color: var(--text);
+}
+.app-card__meta {
+  font-size: .72rem;
+  color: var(--dim);
+  font-family: var(--mono);
+  margin-bottom: 10px;
+}
+.nsid-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.nsid-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .72rem;
+  font-family: var(--mono);
+  color: var(--muted);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.nsid-row:last-child { border-bottom: none; }
+.nsid-row__method {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nsid-row__ns {
+  color: var(--dim);
+  flex-shrink: 0;
+}
+.nsid-row__leaf {
+  color: var(--cyan);
+}
+.nsid-row__count {
+  color: var(--dim);
+  flex-shrink: 0;
+  font-size: .65rem;
+}
+.nsid-row__dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--border2);
+  flex-shrink: 0;
+}
+.nsid-row--write .nsid-row__dot { background: var(--red); }
+.nsid-row--read  .nsid-row__dot { background: var(--cyan); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:60px;">
+  <div class="flex items-center gap-8" style="margin-bottom:4px;">
+    <h1 style="font-size:1.2rem; font-weight:700;">Connected Apps</h1>
+    <span class="text-dim mono" style="margin-left:auto; font-size:.8rem;">{{ connected_apps|length }} app{{ 's' if connected_apps|length != 1 }}</span>
+  </div>
+  <p style="font-size:.8rem; color:var(--dim); margin-bottom:0;">Every external app that authenticated through this PDS, and the ATProto methods they called.</p>
+
+  {% if not connected_apps %}
+  <div class="empty" style="margin-top:40px;">
+    <div class="empty__icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+    </div>
+    No external apps have authenticated yet.
+  </div>
+  {% else %}
+  <div class="apps-grid">
+    {% for app in connected_apps %}
+    <div class="app-card">
+      <div class="app-card__header">
+        <img class="app-card__favicon"
+             src="https://www.google.com/s2/favicons?domain={{ app.domain }}&sz=32"
+             alt="" loading="lazy" onerror="this.style.display='none'">
+        <span class="app-card__domain">{{ app.domain }}</span>
+      </div>
+      <div class="app-card__meta">
+        first seen {{ app.first_seen | timestamp }}
+        &nbsp;·&nbsp;
+        last active {{ app.last_seen | timestamp }}
+        &nbsp;·&nbsp;
+        {{ app.total_calls }} call{{ 's' if app.total_calls != 1 }}
+      </div>
+      <div class="nsid-list">
+        {% for n in app.nsids %}
+        {% set parts = n.nsid.rsplit('.', 1) %}
+        {% set is_write = n.nsid.startswith('com.atproto.repo') or 'create' in n.nsid.lower() or 'delete' in n.nsid.lower() or 'update' in n.nsid.lower() or 'put' in n.nsid.lower() %}
+        <div class="nsid-row {% if is_write %}nsid-row--write{% else %}nsid-row--read{% endif %}">
+          <div class="nsid-row__dot"></div>
+          <div class="nsid-row__method" title="{{ n.nsid }}">
+            <span class="nsid-row__ns">{{ parts[0] if parts|length > 1 else '' }}.</span><span class="nsid-row__leaf">{{ parts[1] if parts|length > 1 else n.nsid }}</span>
+          </div>
+          <div class="nsid-row__count">×{{ n.calls }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

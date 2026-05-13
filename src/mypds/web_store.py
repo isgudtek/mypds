@@ -52,6 +52,17 @@ class WebStore:
 				value TEXT NOT NULL
 			)
 		""")
+		# Ensure app_logins table exists
+		self.con.execute("""
+			CREATE TABLE IF NOT EXISTS app_logins (
+				domain     TEXT NOT NULL,
+				nsid       TEXT NOT NULL,
+				first_seen INTEGER NOT NULL,
+				last_seen  INTEGER NOT NULL,
+				call_count INTEGER NOT NULL DEFAULT 1,
+				PRIMARY KEY (domain, nsid)
+			)
+		""")
 		# Ensure dropbox_item table exists
 		self.con.execute("""
 			CREATE TABLE IF NOT EXISTS dropbox_item (
@@ -317,6 +328,35 @@ class WebStore:
 
 	def mark_initialized(self):
 		self.set_node_setting("initialized", "1")
+
+	# ── App login tracking ────────────────────────────────────────────────────
+
+	def track_app_call(self, domain: str, nsid: str) -> None:
+		now = int(time.time())
+		self.con.execute(
+			"INSERT INTO app_logins(domain, nsid, first_seen, last_seen, call_count) VALUES(?,?,?,?,1) "
+			"ON CONFLICT(domain, nsid) DO UPDATE SET last_seen=excluded.last_seen, call_count=call_count+1",
+			(domain, nsid, now, now),
+		)
+		self.con.commit()
+
+	def get_app_logins(self) -> list:
+		rows = self.con.execute(
+			"SELECT domain, nsid, first_seen, last_seen, SUM(call_count) as calls "
+			"FROM app_logins GROUP BY domain, nsid ORDER BY domain, last_seen DESC"
+		).fetchall()
+		# Group by domain
+		apps: dict = {}
+		for r in rows:
+			d = r["domain"]
+			if d not in apps:
+				apps[d] = {"domain": d, "first_seen": r["first_seen"],
+				            "last_seen": r["last_seen"], "nsids": [], "total_calls": 0}
+			apps[d]["nsids"].append({"nsid": r["nsid"], "calls": r["calls"]})
+			apps[d]["total_calls"] += r["calls"]
+			apps[d]["first_seen"] = min(apps[d]["first_seen"], r["first_seen"])
+			apps[d]["last_seen"]  = max(apps[d]["last_seen"],  r["last_seen"])
+		return sorted(apps.values(), key=lambda a: a["last_seen"], reverse=True)
 
 	# ── Dropbox ───────────────────────────────────────────────────────────────
 

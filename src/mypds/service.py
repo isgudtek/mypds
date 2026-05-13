@@ -75,14 +75,35 @@ async def atproto_service_proxy_middleware(request: web.Request, handler):
 	# else, normal response
 	res: web.Response = await handler(request)
 
+	# track external app logins via XRPC calls
+	if (
+		request.path.startswith("/xrpc/")
+		and request.headers.get("Authorization")
+		and res.status < 400
+	):
+		referer = request.headers.get("Referer", "")
+		if referer:
+			try:
+				from urllib.parse import urlparse
+				domain = urlparse(referer).netloc.lstrip("www.")
+				nsid = request.path[len("/xrpc/"):]
+				if domain and nsid and "." in nsid:
+					ws = request.app[MILLIPDS_WEB_STORE]
+					ws.track_app_call(domain, nsid)
+			except Exception:
+				pass
+
 	# inject security headers (this should really be a separate middleware, but here works too)
-	res.headers.setdefault("X-Frame-Options", "DENY")  # prevent clickajcking
+	# skip for static files — they are not HTML documents and don't need document-level CSP
+	is_static = request.path.startswith("/static/") or request.path == "/favicon.ico"
+	res.headers.setdefault("X-Frame-Options", "DENY")  # prevent clickjacking
 	res.headers.setdefault(
 		"X-Content-Type-Options", "nosniff"
 	)  # prevent XSS (almost vestigial at this point, I think)
-	res.headers.setdefault(
-		"Content-Security-Policy", "default-src 'none'; sandbox"
-	)  # prevent everything
+	if not is_static:
+		res.headers.setdefault(
+			"Content-Security-Policy", "default-src 'none'; sandbox"
+		)  # prevent everything for non-static responses
 	# NB: HSTS and other TLS-related headers not set, set them in nginx or wherever you terminate TLS
 
 	return res
@@ -531,15 +552,20 @@ def construct_app(
 
 	# Set up Jinja2 template environment with plugin template dirs
 	template_dir = Path(__file__).parent / "templates"
-	plugin_loaders = {}
+	# PrefixLoader splits on first "/" so we need two levels:
+	# "plugin/planner/main.html" → outer["plugin"] → inner["planner"] → "main.html"
+	plugin_inner = {}
 	for app_name, plugin_mod in plugins.items():
 		plugin_tmpl_dir = Path(plugin_mod.__file__).parent / "templates"
 		if plugin_tmpl_dir.exists():
-			plugin_loaders[f"plugin/{app_name}"] = FileSystemLoader(str(plugin_tmpl_dir))
+			plugin_inner[app_name] = FileSystemLoader(str(plugin_tmpl_dir))
 
 	jinja_loader = (
-		ChoiceLoader([FileSystemLoader(str(template_dir)), PrefixLoader(plugin_loaders)])
-		if plugin_loaders else FileSystemLoader(str(template_dir))
+		ChoiceLoader([
+			FileSystemLoader(str(template_dir)),
+			PrefixLoader({"plugin": PrefixLoader(plugin_inner)}),
+		])
+		if plugin_inner else FileSystemLoader(str(template_dir))
 	)
 	jinja_env = Environment(
 		loader=jinja_loader,

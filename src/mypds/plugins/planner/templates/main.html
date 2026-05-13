@@ -1,0 +1,113 @@
+{% extends "node_base.html" %}
+{% block title %}planner{% endblock %}
+
+{% block head %}
+<style>
+.planner-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-top: 24px;
+}
+@media (max-width: 900px) {
+  .planner-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 600px) {
+  .planner-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.day-col {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px;
+  min-height: 180px;
+}
+.day-col__header {
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.day-col__add {
+  color: var(--dim);
+  font-size: .8rem;
+  line-height: 1;
+  text-decoration: none;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border2);
+}
+.day-col__add:hover { color: var(--text); border-color: var(--muted); }
+.event-card {
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  font-size: .78rem;
+  border-left: 3px solid var(--border2);
+  background: var(--surface2);
+  position: relative;
+}
+.event-card--cyan  { border-left-color: var(--cyan); }
+.event-card--red   { border-left-color: var(--red); }
+.event-card--purple{ border-left-color: var(--purple); }
+.event-card__time  { font-size: .65rem; color: var(--dim); font-family: var(--mono); }
+.event-card__title { font-weight: 600; color: var(--text); margin-top: 2px; }
+.event-card__notes { font-size: .72rem; color: var(--muted); margin-top: 3px; white-space: pre-wrap; }
+.event-card__del {
+  position: absolute;
+  top: 4px; right: 6px;
+  font-size: .65rem;
+  color: var(--dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.event-card__del:hover { color: var(--red); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:60px;">
+  <div class="flex items-center gap-8" style="margin-bottom:4px;">
+    <h1 style="font-size:1.2rem; font-weight:700;">Weekly Planner</h1>
+    {% if session %}
+    <a class="btn btn--primary" href="/planner/new" style="margin-left:auto; cursor:pointer;">+ add event</a>
+    {% endif %}
+  </div>
+
+  <div class="planner-grid">
+    {% for day in days %}
+    <div class="day-col">
+      <div class="day-col__header">
+        <span>{{ day_labels[day][:3] }}</span>
+        {% if session %}
+        <a class="day-col__add" href="/planner/new?day={{ day }}" style="cursor:pointer;">+</a>
+        {% endif %}
+      </div>
+
+      {% for event in events[day] %}
+      <div class="event-card event-card--{{ event.color }}">
+        {% if event.time %}<div class="event-card__time">{{ event.time }}</div>{% endif %}
+        <div class="event-card__title">{{ event.title }}</div>
+        {% if event.notes %}<div class="event-card__notes">{{ event.notes }}</div>{% endif %}
+        {% if session %}
+        <form method="post" action="/planner/{{ event.rkey }}/delete" style="display:inline;">
+          <button class="event-card__del" type="submit" title="delete">✕</button>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <div style="font-size:.7rem; color:var(--dim); text-align:center; margin-top:20px;">empty</div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

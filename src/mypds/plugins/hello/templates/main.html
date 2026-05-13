@@ -1,0 +1,17 @@
+{% extends "node_base.html" %}
+{% block title %}Hello{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:48px;text-align:center;">
+  <h1 style="font-size:2rem;font-weight:700;margin-bottom:12px;">Hello World!</h1>
+  <p style="color:var(--muted);font-size:1.05rem;">
+    Public-by-default internet, private-by-choice
+  </p>
+  <div class="panel" style="margin-top:28px;max-width:400px;margin-left:auto;margin-right:auto;">
+    <p style="font-size:.9rem;color:var(--muted);">
+      This page was loaded from <code style="color:var(--cyan);">plugin/hello/main.html</code>.
+      No core files were touched.
+    </p>
+  </div>
+</div>
+{% endblock %}

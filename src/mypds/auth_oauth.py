@@ -193,8 +193,15 @@ def dpop_protected(handler):
 		if request.method != decoded["htm"]:
 			raise web.HTTPBadRequest(text="dpop: bad htm")
 
-		if str(request.url) != decoded["htu"]:
-			logger.info(f"{request.url!r} != {decoded['htu']!r}")
+		# Reconstruct the public-facing URL using the configured PDS prefix,
+		# since request.url uses the internal http:// scheme behind Cloudflare.
+		cfg = get_db(request).config
+		pds_pfx = cfg["pds_pfx"].rstrip("/")
+		public_url = pds_pfx + request.path
+		if request.query_string:
+			public_url += "?" + request.query_string
+		if public_url != decoded["htu"]:
+			logger.info(f"{public_url!r} != {decoded['htu']!r}")
 			raise web.HTTPBadRequest(
 				text="dpop: bad htu (if your application is reverse-proxied, make sure the Host header is getting set properly)"
 			)
