@@ -312,6 +312,12 @@ class WebStore:
 		rows = self.con.execute("SELECT key, value FROM node_settings").fetchall()
 		return {r["key"]: r["value"] for r in rows}
 
+	def is_initialized(self) -> bool:
+		return self.get_node_setting("initialized") == "1"
+
+	def mark_initialized(self):
+		self.set_node_setting("initialized", "1")
+
 	# ── Dropbox ───────────────────────────────────────────────────────────────
 
 	DROPBOX_DIR_NAME = "dropbox"

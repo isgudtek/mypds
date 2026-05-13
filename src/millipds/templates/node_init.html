@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mypds · first run</title>
+<link rel="stylesheet" href="/static/node.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* ── Jingle overlay ── */
+  .jingle {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: jingle-fade 0.6s ease 2.8s forwards;
+    pointer-events: none;
+  }
+
+  @keyframes jingle-fade {
+    to { opacity: 0; visibility: hidden; }
+  }
+
+  .jingle__crab {
+    font-size: 4rem;
+    animation: crab-bounce 0.5s ease infinite alternate,
+               crab-appear 0.4s ease both;
+  }
+
+  @keyframes crab-appear {
+    from { opacity: 0; transform: scale(0.4); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes crab-bounce {
+    from { transform: translateY(0) rotate(-6deg); }
+    to   { transform: translateY(-10px) rotate(6deg); }
+  }
+
+  .jingle__title {
+    margin-top: 20px;
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    animation: text-slide 0.5s ease 0.3s both;
+    color: var(--text);
+  }
+
+  .jingle__sub {
+    margin-top: 8px;
+    font-size: .72rem;
+    color: var(--dim);
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    animation: text-slide 0.5s ease 0.5s both;
+  }
+
+  .jingle__bar {
+    margin-top: 28px;
+    width: 160px;
+    height: 2px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+    animation: text-slide 0.5s ease 0.6s both;
+  }
+
+  .jingle__bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--red);
+    border-radius: 2px;
+    animation: bar-fill 2s ease 0.7s forwards;
+  }
+
+  @keyframes bar-fill {
+    to { width: 100%; }
+  }
+
+  @keyframes text-slide {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .jingle { animation: none; opacity: 0; visibility: hidden; }
+    .jingle__crab, .jingle__title, .jingle__sub, .jingle__bar { animation: none; }
+    .jingle__bar-fill { width: 100%; }
+  }
+
+  /* ── Login card ── */
+  .init-wrap {
+    width: 100%;
+    max-width: 360px;
+    padding: 24px;
+    animation: card-rise 0.5s ease 3.1s both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .init-wrap { animation: none; opacity: 1; }
+  }
+
+  @keyframes card-rise {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .init-header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .init-header__logo {
+    font-size: 2rem;
+    margin-bottom: 10px;
+  }
+
+  .init-header__title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .init-header__sub {
+    font-size: .72rem;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: .15em;
+  }
+
+  .init-badge {
+    display: inline-block;
+    font-size: .65rem;
+    background: color-mix(in srgb, var(--red) 15%, transparent);
+    color: var(--red);
+    border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+    border-radius: 4px;
+    padding: 2px 8px;
+    letter-spacing: .1em;
+    margin-bottom: 24px;
+    text-transform: uppercase;
+  }
+
+  .init-form .field { margin-bottom: 16px; }
+
+  .init-form label {
+    display: block;
+    font-size: .72rem;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: 6px;
+  }
+
+  .init-form input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: .9rem;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color .15s;
+  }
+
+  .init-form input:focus { border-color: var(--red); }
+
+  .init-submit {
+    width: 100%;
+    background: var(--red);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: .9rem;
+    font-weight: 600;
+    padding: 11px;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: opacity .15s;
+  }
+
+  .init-submit:hover { opacity: .85; }
+
+  .init-error {
+    background: color-mix(in srgb, var(--red) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+    border-radius: 6px;
+    color: var(--red);
+    font-size: .8rem;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+  }
+
+  .init-note {
+    text-align: center;
+    font-size: .68rem;
+    color: var(--dim);
+    margin-top: 20px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<!-- Jingle overlay — plays once on first ever load -->
+<div class="jingle" aria-hidden="true">
+  <div class="jingle__crab">🦀</div>
+  <div class="jingle__title">mypds</div>
+  <div class="jingle__sub">personal atproto node</div>
+  <div class="jingle__bar"><div class="jingle__bar-fill"></div></div>
+</div>
+
+<!-- Login card -->
+<div class="init-wrap">
+  <div class="init-header">
+    <div class="init-header__logo">🦀</div>
+    <div class="init-header__title">Welcome to your PDS</div>
+    <div class="init-header__sub">first run setup</div>
+  </div>
+
+  <div style="text-align:center;">
+    <span class="init-badge">⬤ initializing</span>
+  </div>
+
+  {% if error %}
+  <div class="init-error">{{ error }}</div>
+  {% endif %}
+
+  <form class="init-form" method="post" action="/login">
+    <div class="field">
+      <label>handle or DID</label>
+      <input type="text" name="identifier" placeholder="alice.example.com" autofocus autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label>password</label>
+      <input type="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+    </div>
+    <button class="init-submit" type="submit" style="cursor:pointer;">
+      initialize &amp; login →
+    </button>
+  </form>
+
+  <div class="init-note">
+    Your node is private until you log in for the first time.<br>
+    After that, you control what's visible to the world.
+  </div>
+</div>
+
+</body>
+</html>

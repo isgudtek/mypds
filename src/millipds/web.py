@@ -69,10 +69,17 @@ def clear_session_cookie(response: web.Response):
 	response.del_cookie(COOKIE_NAME, path="/")
 
 
+_INIT_EXEMPT_TEMPLATES = {"node_init.html", "node_login.html"}
+
 def render(request: web.Request, template: str, ctx: dict = {}, status: int = 200) -> web.Response:
 	jinja = get_jinja_env(request)
 	session = get_session(request)
 	ws = get_web_store(request)
+
+	# First-run lock: until owner logs in for the first time, nothing is public
+	if not ws.is_initialized() and not session and template not in _INIT_EXEMPT_TEMPLATES:
+		raise web.HTTPFound("/")
+
 	apps = ws.get_all_app_settings()
 	_ns = ws.get_all_node_settings()
 	node_settings = {
@@ -149,6 +156,14 @@ def format_ts(ts_str: str) -> str:
 
 @web_routes.get("/")
 async def homepage(request: web.Request):
+	ws = get_web_store(request)
+
+	# First run: show init/jingle page before owner has ever logged in
+	if not ws.is_initialized():
+		session = get_session(request)
+		if not session:
+			return render(request, "node_init.html", {})
+
 	db = get_db(request)
 	profile = get_node_profile(db)
 	posts = []
@@ -157,14 +172,12 @@ async def homepage(request: web.Request):
 		for p in posts:
 			p["ts_human"] = format_ts(p["created_at"])
 
-	ws = get_web_store(request)
 	apps = ws.get_all_app_settings()
 	pages = [p for p in ws.list_pages() if p["is_published"]] if apps.get("pages", True) else []
 	files = [f for f in ws.list_files() if f["is_public"]] if apps.get("files", True) else []
 	gallery = _get_gallery(db, profile["did"], limit=6) if (profile["did"] and apps.get("gallery", True)) else []
 	links  = _get_linktree(db, profile["did"]) if (profile["did"] and apps.get("links", True)) else []
 	places = _get_places(db, profile["did"])[:3] if (profile["did"] and apps.get("places", True)) else []
-	# Note: apps also injected by render() — not passed explicitly to avoid duplicate kwarg
 	version = _get_version()
 
 	return render(request, "node_home.html", {
@@ -281,6 +294,9 @@ async def media_serve(request: web.Request):
 
 @web_routes.get("/login")
 async def login_page(request: web.Request):
+	ws = get_web_store(request)
+	if not ws.is_initialized():
+		raise web.HTTPFound("/")
 	if get_session(request):
 		raise web.HTTPFound("/dashboard")
 	return render(request, "node_login.html", {"error": None})
@@ -293,12 +309,19 @@ async def login_post(request: web.Request):
 	password = data.get("password", "")
 
 	db = get_db(request)
+	ws = get_web_store(request)
+	first_run = not ws.is_initialized()
+
 	try:
 		did, handle = db.verify_account_login(identifier, password)
 	except (KeyError, ValueError):
+		if first_run:
+			return render(request, "node_init.html", {"error": "Invalid credentials"})
 		return render(request, "node_login.html", {"error": "Invalid credentials"}, status=401)
 
-	ws = get_web_store(request)
+	if first_run:
+		ws.mark_initialized()
+
 	token = ws.create_session(did, handle)
 	resp = redirect("/dashboard")
 	set_session_cookie(resp, token)
