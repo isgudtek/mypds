@@ -213,10 +213,11 @@ source /opt/mypds/.venv/bin/activate
 mypds account create "$DID" "$HANDLE" \
   --signing_key=/opt/mypds/repo_key.pem \
   --pds-pfx="$PDS_URL" \
-  --pds-did-plc=https://plc.directory
+  --pds-did-plc=https://plc.directory \
+  --unsafe_password=changeme123
 ```
 
-You'll be prompted for a password interactively. This is the web UI login password — set something strong.
+Default password is `changeme123` — tell the user to change it after first login. The `--unsafe_password` flag skips interactive prompting.
 
 ---
 
