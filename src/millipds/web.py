@@ -1212,11 +1212,12 @@ async def places_new_post(request: web.Request):
 
 	tags = [t.strip() for t in tags_raw.replace(",", " ").split() if t.strip()]
 	rkey = util.tid_now()
+	# ATProto DAG-CBOR (atjson mode) does not support floats — store as strings
 	record = {
 		"$type": PLACES_NSID,
 		"name": name,
-		"lat": lat,
-		"lng": lng,
+		"lat": f"{lat:.6f}",
+		"lng": f"{lng:.6f}",
 		"createdAt": util.iso_string_now(),
 	}
 	if description: record["description"] = description
