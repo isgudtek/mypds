@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>login · millipds</title>
+<link rel="stylesheet" href="/static/node.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-box">
+
+    <div class="login-box__logo">millipds<span>.node</span></div>
+    <h1>Sign in</h1>
+    <p>Access your personal data server.</p>
+
+    {% if error %}
+    <div class="alert alert--error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <div class="form-group">
+        <label>Handle or DID</label>
+        <input class="form-control" type="text" name="identifier" autocomplete="username"
+               placeholder="you.pds.example.com" required autofocus>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input class="form-control" type="password" name="password" autocomplete="current-password"
+               placeholder="••••••••" required>
+      </div>
+      <button class="btn btn--primary" type="submit" style="width:100%;justify-content:center;">
+        Sign in →
+      </button>
+    </form>
+
+    <div style="margin-top:24px; font-size:.75rem; color:var(--dim); font-family:var(--mono);">
+      <a href="/" style="color:var(--dim);">← back to node</a>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

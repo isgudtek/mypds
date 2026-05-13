@@ -5,12 +5,12 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "millipds"
+name = "mypds"
 dynamic = ["version"]
 authors = [
  	{ name="David Buchanan", email="d@vidbuchanan.co.uk" },
 ]
-description = "A lightweight atproto PDS"
+description = "ATProto Personal Home Node — self-hosted PDS with gallery, blog, files, compose, password-protected pages and web UI. Fork of millipds."
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-docs = [ # uhhhhh I'm not currently using these lol
+docs = [
 	"sphinx",
 	"sphinx-rtd-theme",
 	"sphinxcontrib-jquery",
@@ -51,11 +51,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/DavidBuchanan314/millipds"
-Issues = "https://github.com/DavidBuchanan314/millipds/issues"
+Homepage = "https://github.com/isgudtek/mypds"
+Issues = "https://github.com/isgudtek/mypds/issues"
 
 [project.scripts]
-millipds = "millipds.__main__:main"
+mypds = "millipds.__main__:main"
 
 [tool.ruff]
 line-length = 80

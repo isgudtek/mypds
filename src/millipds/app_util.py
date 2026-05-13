@@ -60,4 +60,5 @@ __all__ = [
 	"get_firehose_queues_lock",
 	"get_did_resolver",
 	"get_jinja_env",
+	# web_store key is defined in web.py to avoid circular imports
 ]

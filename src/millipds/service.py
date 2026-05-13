@@ -8,7 +8,9 @@ import io
 import json
 import uuid
 import hashlib
+import re
 from pathlib import Path
+from datetime import datetime, timezone
 
 import apsw
 import aiohttp
@@ -30,6 +32,8 @@ from .appview_proxy import service_proxy
 from .auth_bearer import authenticated, verify_symmetric_token
 from .app_util import *
 from .did import DIDResolver
+from .web import web_routes, MILLIPDS_WEB_STORE
+from .web_store import WebStore
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +113,16 @@ https://github.com/DavidBuchanan314/millipds
 """
 
 	return web.Response(text=msg)
+
+
+@routes.get("/.well-known/atproto-did")
+async def well_known_atproto_did(request: web.Request):
+	handle = request.host.split(":")[0]  # strip port if present
+	db = get_db(request)
+	did = db.did_by_handle(handle)
+	if did is None:
+		raise web.HTTPNotFound(text="handle not found")
+	return web.Response(text=did, content_type="text/plain")
 
 
 @routes.get(
@@ -498,6 +512,58 @@ def construct_app(
 		auto_reload=False,  # Templates loaded once at startup
 	)
 
+	# ── Jinja2 custom filters ──────────────────────────────────────────────
+	def _markdown_filter(text: str) -> str:
+		"""Minimal Markdown → HTML (no external deps required)."""
+		# Escape HTML first (autoescape is on, so we mark result as safe in template)
+		import html as _html
+		t = _html.escape(str(text))
+		# Code blocks
+		t = re.sub(r'```([^`]*?)```', lambda m: f'<pre><code>{m.group(1).strip()}</code></pre>', t, flags=re.DOTALL)
+		# Inline code
+		t = re.sub(r'`([^`]+)`', r'<code>\1</code>', t)
+		# Headers
+		t = re.sub(r'^### (.+)$', r'<h3>\1</h3>', t, flags=re.MULTILINE)
+		t = re.sub(r'^## (.+)$',  r'<h2>\1</h2>', t, flags=re.MULTILINE)
+		t = re.sub(r'^# (.+)$',   r'<h1>\1</h1>', t, flags=re.MULTILINE)
+		# HR
+		t = re.sub(r'^---+$', '<hr>', t, flags=re.MULTILINE)
+		# Bold / italic
+		t = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
+		t = re.sub(r'\*(.+?)\*',     r'<em>\1</em>', t)
+		# Blockquotes
+		t = re.sub(r'^&gt; (.+)$', r'<blockquote>\1</blockquote>', t, flags=re.MULTILINE)
+		# Unordered lists (simple)
+		t = re.sub(r'(?m)^- (.+)$', r'<li>\1</li>', t)
+		t = re.sub(r'(<li>.*</li>)', r'<ul>\1</ul>', t, flags=re.DOTALL)
+		# Images (must come before links to avoid partial matches)
+		t = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1" loading="lazy">', t)
+		# Links
+		t = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', t)
+		# Paragraphs (double newline → p)
+		blocks = re.split(r'\n\n+', t)
+		result = []
+		for block in blocks:
+			block = block.strip()
+			if not block:
+				continue
+			if block.startswith(('<h', '<ul', '<pre', '<blockquote', '<hr')):
+				result.append(block)
+			else:
+				result.append(f'<p>{block.replace(chr(10), "<br>")}</p>')
+		return '\n'.join(result)
+
+	def _timestamp_filter(ts: int) -> str:
+		try:
+			dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+			return dt.strftime('%Y-%m-%d')
+		except Exception:
+			return str(ts)
+
+	jinja_env.filters['markdown'] = _markdown_filter
+	jinja_env.filters['timestamp'] = _timestamp_filter
+	jinja_env.filters['tojson'] = lambda v: __import__('json').dumps(v, ensure_ascii=False)
+
 	app = web.Application(middlewares=[cors, atproto_service_proxy_middleware])
 	app[MILLIPDS_DB] = db
 	app[MILLIPDS_AIOHTTP_CLIENT] = client
@@ -505,7 +571,16 @@ def construct_app(
 	app[MILLIPDS_FIREHOSE_QUEUES_LOCK] = asyncio.Lock()
 	app[MILLIPDS_DID_RESOLVER] = did_resolver
 	app[MILLIPDS_JINJA_ENV] = jinja_env
+	app[MILLIPDS_WEB_STORE] = WebStore()
 
+	# Static file serving
+	static_dir = Path(__file__).parent / "static"
+	app.router.add_static("/static", static_dir, name="static")
+
+	# Web UI routes (registered before ATProto routes so / is ours)
+	app.add_routes(web_routes)
+
+	# ATProto protocol routes
 	app.add_routes(routes)
 	app.add_routes(auth_oauth.as_routes)
 	app.add_routes(auth_oauth.routes)
@@ -546,6 +621,32 @@ async def run(
 		site = web.UnixSite(runner, path=sock_path)
 
 	await site.start()
+
+	# Kick the Bluesky relay after startup — retry until tunnel is up (max 5 attempts)
+	async def _request_crawl_with_retry():
+		try:
+			pds_pfx = db.config["pds_pfx"]
+			hostname = pds_pfx.removeprefix("https://").removeprefix("http://").rstrip("/")
+			if not hostname:
+				return
+			for attempt in range(5):
+				await asyncio.sleep(attempt * 8)  # 0, 8, 16, 24, 32s
+				try:
+					async with client.post(
+						"https://bsky.network/xrpc/com.atproto.sync.requestCrawl",
+						json={"hostname": hostname},
+						timeout=aiohttp.ClientTimeout(total=10),
+					) as resp:
+						if resp.status == 200:
+							logger.info(f"relay crawl ok for {hostname} (attempt {attempt+1})")
+							return
+						logger.info(f"relay crawl {resp.status} attempt {attempt+1}, retrying…")
+				except Exception as e:
+					logger.info(f"relay crawl attempt {attempt+1} failed: {e}, retrying…")
+		except Exception as e:
+			logger.warning(f"relay crawl setup failed: {e}")
+
+	asyncio.ensure_future(_request_crawl_with_retry())
 
 	if sock_path:
 		# give group access to the socket (so that nginx can access it via a shared group)

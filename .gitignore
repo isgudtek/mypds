@@ -161,3 +161,17 @@ cython_debug/
 
 # millipds data dir (should only end up here during local testing of dev builds)
 data/
+
+# instance keys / secrets
+*.pem
+*_key.pem
+plc_genesis.json
+did.txt
+password.txt
+
+# logs
+*.log
+
+# cloudflared tunnel configs
+*.yml
+!pyproject.toml

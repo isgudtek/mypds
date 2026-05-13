@@ -1,39 +1,104 @@
-# millipds [WIP]
-A from-scratch atproto PDS implementation that dreams of becoming "production grade" software (it isn't, yet).
+# mypds — ATProto Personal Home Node
 
-millipds is a successor to [DavidBuchanan314/picopds](https://github.com/davidBuchanan314/picopds), which is even more minimalist, but hacky and no longer maintained.
+A self-hosted ATProto PDS with a full web UI, gallery, blog, file manager, compose, and password-protected pages.
 
-It works to the extent that it can "federate" with the rest of the atproto network, but there are a lot of rough edges still. I wouldn't currently recommend using it for anything other than testing or experimentation (although, due to the nature of atproto, if you don't like it you can seamlessly migrate your whole account elsewhere). Until millipds reaches v1.0.0, I reserve the right to make breaking DB schema changes without providing a migration path.
+Fork of [millipds](https://github.com/DavidBuchanan314/millipds) by David Buchanan.
 
-It depends on [DavidBuchanan314/atmst](https://github.com/DavidBuchanan314/atmst) for implementing logic related to the Merkle Search Tree data structure, and [DavidBuchanan314/dag-cbrrr](https://github.com/DavidBuchanan314/dag-cbrrr) for DAG-CBOR parsing and serialisation.
+---
 
-See https://github.com/DavidBuchanan314/millipds/issues/12 for an incomplete list of differences between this implementation and the [reference implementation](https://github.com/bluesky-social/atproto/tree/main/packages/pds).
+## What is this?
 
-### Local dev install:
+`mypds` turns your PDS into a **Personal Home Node** — not just a protocol relay, but a living website you actually own:
+
+| App | Lexicon | What it does |
+|-----|---------|--------------|
+| **Compose** | `app.bsky.feed.post` | Write posts, broadcast to firehose, Bluesky-compatible |
+| **Blog / Pages** | `com.whtwnd.blog.entry` | Publish pages/posts, readable by WhiteWind and any ATProto client |
+| **Gallery** | `pub.gallery.image` | Photo grid with lightbox, tags, drag-and-drop upload |
+| **Files** | `app.bsky.feed.post` (attachment) | Upload and share any file via ATProto blob store |
+| **Node Info** | — | Public stats, ATProto endpoints, DID document |
+
+All data lives in **your** ATProto repo (MST), propagated on the firehose. Every photo, every post, every page is a real ATProto record with a real `at://` URI.
+
+---
+
+## Quick start
 
 ```sh
-git clone https://github.com/DavidBuchanan314/millipds
-cd millipds
+git clone https://github.com/isgudtek/mypds
+cd mypds
 python3 -m pip install -e .
+mypds run --pds-pfx https://your.domain --pds-did-plc https://plc.directory
 ```
 
-### Dockerised dev install, via podman:
+---
 
-(note: I have no idea what I'm doing with this!)
+## Features
 
-```sh
-podman build -f millipds_dev.dockerfile -t millipds_dev
-podman run --rm -it -p 8123:8123 millipds_dev
+- **ATProto-native storage** — every record in the MST, every blob in the blob store
+- **Firehose broadcast** — posts and records propagate to relays in real time
+- **WhiteWind blog** — pages use `com.whtwnd.blog.entry` so they appear in WhiteWind
+- **Password-protected pages** — SHA-256 gate, 24h cookie, owner bypass
+- **Images in posts and pages** — markdown `![alt](url)` support, inline blob refs
+- **Gallery** — `pub.gallery.image` records with tags, ATProto Browser links
+- **Node info page** — public DID, endpoints, stats, software stack
+- **Relay crawl on startup** — auto-requests re-index after tunnel restarts
+- **Dark-mode UI** — minimal, monospaced, terminal-aesthetic
+
+---
+
+## Architecture
+
+```
+mypds/
+├── src/millipds/
+│   ├── web.py          # all node UI routes (home, compose, gallery, pages, files, node-info)
+│   ├── web_store.py    # web.sqlite3 (sessions, pages, media)
+│   ├── atproto_repo.py # MST writes, firehose broadcast
+│   ├── service.py      # aiohttp app, Jinja2 env, startup crawl retry
+│   ├── templates/      # Jinja2 HTML templates (node_*.html)
+│   └── static/         # node.css
 ```
 
-### Production deployment on Ubuntu (and similar systems) [WIP]
+Storage: two SQLite databases via `apsw`
+- `millipds.db` — ATProto repo (MST, blobs, DIDs, auth)
+- `web.sqlite3` — pages, sessions, media metadata
 
-See [./docs/DEPLOY.md](./docs/DEPLOY.md)
+---
 
+## Routes
 
-### Running the tests locally
+| Path | Auth | Description |
+|------|------|-------------|
+| `/` | public | Home: profile, recent posts, gallery preview, pages list |
+| `/compose` | owner | Write & post to firehose |
+| `/gallery` | public | Photo grid with lightbox |
+| `/gallery/upload` | owner | Drag-and-drop photo upload |
+| `/pages` | owner | Manage blog pages |
+| `/p/{slug}` | public* | Read a page (*password gate if protected) |
+| `/files` | owner | Upload files, get direct links |
+| `/node-info` | public | DID, ATProto endpoints, stats |
+| `/login` `/logout` | — | Session auth |
 
-```sh
-python3 -m pip install -e .[test]  # install the testing dependencies (only needed once, unless new deps are added)
-python3 -m pytest .  # run the tests
+---
+
+## ATProto Philosophy
+
+Every feature is a **lexicon + UI**. No proprietary formats. Your data is yours:
+
 ```
+at://did:plc:xxx/pub.gallery.image/3jwxyz
+at://did:plc:xxx/com.whtwnd.blog.entry/3jwxyz
+at://did:plc:xxx/app.bsky.feed.post/3jwxyz
+```
+
+Any ATProto client can read these. Migrate your DID to another PDS and your data follows.
+
+---
+
+## License
+
+MIT — same as upstream millipds.
+
+Original millipds by [David Buchanan](https://github.com/DavidBuchanan314).
+Personal Home Node additions by [isgudtek](https://github.com/isgudtek).

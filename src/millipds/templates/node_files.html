@@ -1,0 +1,114 @@
+{% extends "node_base.html" %}
+{% block title %}files{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:60px;">
+
+  <div class="flex items-center gap-8" style="margin-bottom:24px;">
+    <h1 style="font-size:1.3rem; font-weight:700;">Files</h1>
+  </div>
+
+  {% if error %}
+  <div class="alert alert--error">{{ error }}</div>
+  {% endif %}
+
+  <!-- Upload -->
+  <div class="panel" style="margin-bottom:20px;">
+    <div class="panel__title">upload</div>
+    <form method="post" action="/files/upload" enctype="multipart/form-data" id="upload-form">
+      <label class="upload-zone" for="file-input" id="upload-zone">
+        <input type="file" name="file" id="file-input" required>
+        <div id="upload-label">
+          <div style="font-size:1.5rem;margin-bottom:8px;">↑</div>
+          Click to select a file, or drag and drop
+        </div>
+      </label>
+      <button class="btn btn--primary btn--sm" type="submit">Upload</button>
+    </form>
+  </div>
+
+  <!-- File list -->
+  {% if files %}
+  <div class="panel">
+    <div class="panel__title">{{ files|length }} file{% if files|length != 1 %}s{% endif %}</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>name</th>
+            <th>type</th>
+            <th>size</th>
+            <th>visibility</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in files %}
+          <tr>
+            <td>
+              <a href="/media/{{ f.filename }}" class="mono" style="font-size:.8rem;">
+                {{ f.orig_name }}
+              </a>
+            </td>
+            <td class="mono text-dim" style="font-size:.75rem;">{{ f.mime_type }}</td>
+            <td class="mono text-dim" style="font-size:.75rem;">{{ (f.size / 1024)|round(1) }} KB</td>
+            <td>
+              <span class="badge {{ 'badge--pub' if f.is_public else 'badge--priv' }}">
+                {{ 'public' if f.is_public else 'private' }}
+              </span>
+            </td>
+            <td>
+              <div class="flex gap-8">
+                <form method="post" action="/files/{{ f.id }}/toggle" style="display:inline;">
+                  <button class="btn btn--ghost btn--sm" type="submit">toggle</button>
+                </form>
+                <form method="post" action="/files/{{ f.id }}/delete" style="display:inline;"
+                      onsubmit="return confirm('Delete {{ f.orig_name }}?')">
+                  <button class="btn btn--danger btn--sm" type="submit">delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty__icon">🗂️</div>
+    No files yet. Upload one above.
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const zone = document.getElementById('upload-zone');
+const input = document.getElementById('file-input');
+const label = document.getElementById('upload-label');
+
+input.addEventListener('change', () => {
+  if (input.files[0]) {
+    label.textContent = input.files[0].name;
+    zone.style.borderColor = 'var(--cyan)';
+  }
+});
+
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag');
+  if (e.dataTransfer.files[0]) {
+    const dt = new DataTransfer();
+    dt.items.add(e.dataTransfer.files[0]);
+    input.files = dt.files;
+    label.textContent = e.dataTransfer.files[0].name;
+    zone.style.borderColor = 'var(--cyan)';
+  }
+});
+</script>
+{% endblock %}

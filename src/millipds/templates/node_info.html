@@ -1,0 +1,265 @@
+{% extends "node_base.html" %}
+{% block title %}node info{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:40px; padding-bottom:80px; max-width:760px;">
+
+  <div style="margin-bottom:40px;">
+    <div class="mono text-dim" style="font-size:.7rem; margin-bottom:8px;">
+      <a href="/" style="color:var(--dim);">home</a> / node-info
+    </div>
+    <h1 style="font-size:2rem; font-weight:700; letter-spacing:-.03em; line-height:1.15;">
+      Node Info
+    </h1>
+    <p style="margin-top:8px; color:var(--dim); font-size:.9rem;">
+      Technical details about this ATProto Personal Home Node.
+    </p>
+  </div>
+
+  {# ── Identity ── #}
+  <section style="margin-bottom:40px;">
+    <h2 class="section-label" style="font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--cyan); margin-bottom:16px;">Identity</h2>
+    <div class="panel">
+      <table style="width:100%;">
+        <tbody>
+          <tr>
+            <td class="mono text-dim" style="width:140px; font-size:.78rem; padding:10px 16px;">handle</td>
+            <td style="padding:10px 16px;">
+              <span class="mono" style="font-size:.9rem;">@{{ profile.handle }}</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">DID</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.82rem; color:var(--cyan); word-break:break-all;"
+                 href="https://plc.directory/{{ profile.did }}" target="_blank" rel="noopener">
+                {{ profile.did }}
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">PLC entry</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.82rem; color:var(--cyan);"
+                 href="https://plc.directory/{{ profile.did }}/log/audit" target="_blank" rel="noopener">
+                plc.directory/{{ profile.did }}/log/audit ↗
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">bsky.app</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.82rem; color:var(--cyan);"
+                 href="https://bsky.app/profile/{{ profile.did }}" target="_blank" rel="noopener">
+                bsky.app/profile/{{ profile.did }} ↗
+              </a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ── Stats ── #}
+  <section style="margin-bottom:40px;">
+    <h2 class="section-label" style="font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--cyan); margin-bottom:16px;">Stats</h2>
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px;">
+      <div class="stat-card">
+        <div class="stat-card__value">{{ post_count }}</div>
+        <div class="stat-card__label">posts</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__value">{{ page_count }}</div>
+        <div class="stat-card__label">pages</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__value">{{ file_count }}</div>
+        <div class="stat-card__label">public files</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__value">{{ blob_count }}</div>
+        <div class="stat-card__label">blobs</div>
+      </div>
+    </div>
+  </section>
+
+  {# ── ATProto Endpoints ── #}
+  <section style="margin-bottom:40px;">
+    <h2 class="section-label" style="font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--cyan); margin-bottom:16px;">ATProto Endpoints</h2>
+    <div class="panel">
+      <table style="width:100%;">
+        <thead>
+          <tr>
+            <th style="padding:8px 16px; font-size:.72rem; color:var(--dim); font-weight:500; text-align:left;">endpoint</th>
+            <th style="padding:8px 16px; font-size:.72rem; color:var(--dim); font-weight:500; text-align:left;">url</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set base = "https://" + profile.handle %}
+          <tr>
+            <td class="mono text-dim" style="font-size:.75rem; padding:10px 16px; white-space:nowrap;">describe server</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.78rem; color:var(--cyan); word-break:break-all;"
+                 href="{{ base }}/xrpc/com.atproto.server.describeServer" target="_blank" rel="noopener">
+                {{ base }}/xrpc/com.atproto.server.describeServer ↗
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.75rem; padding:10px 16px; white-space:nowrap;">get repo</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.78rem; color:var(--cyan); word-break:break-all;"
+                 href="{{ base }}/xrpc/com.atproto.sync.getRepo?did={{ profile.did }}" target="_blank" rel="noopener">
+                {{ base }}/xrpc/com.atproto.sync.getRepo?did={{ profile.did }} ↗
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.75rem; padding:10px 16px; white-space:nowrap;">list repos</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.78rem; color:var(--cyan); word-break:break-all;"
+                 href="{{ base }}/xrpc/com.atproto.sync.listRepos" target="_blank" rel="noopener">
+                {{ base }}/xrpc/com.atproto.sync.listRepos ↗
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.75rem; padding:10px 16px; white-space:nowrap;">did resolution</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.78rem; color:var(--cyan); word-break:break-all;"
+                 href="{{ base }}/.well-known/atproto-did" target="_blank" rel="noopener">
+                {{ base }}/.well-known/atproto-did ↗
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.75rem; padding:10px 16px; white-space:nowrap;">firehose</td>
+            <td style="padding:10px 16px;">
+              <span class="mono text-dim" style="font-size:.78rem;">
+                wss://{{ profile.handle }}/xrpc/com.atproto.sync.subscribeRepos
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ── Software Stack ── #}
+  <section style="margin-bottom:40px;">
+    <h2 class="section-label" style="font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--cyan); margin-bottom:16px;">Software Stack</h2>
+    <div class="panel">
+      <table style="width:100%;">
+        <tbody>
+          <tr>
+            <td class="mono text-dim" style="width:160px; font-size:.78rem; padding:10px 16px;">PDS</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.85rem; color:var(--cyan);"
+                 href="https://github.com/isgudtek/millipds" target="_blank" rel="noopener">
+                millipds ↗
+              </a>
+              <span class="mono text-dim" style="font-size:.75rem; margin-left:8px;">{{ version }}</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">runtime</td>
+            <td style="padding:10px 16px;"><span class="mono" style="font-size:.85rem;">Python 3.12 · aiohttp</span></td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">repo store</td>
+            <td style="padding:10px 16px;"><span class="mono" style="font-size:.85rem;">SQLite via apsw · MST (Merkle Search Tree)</span></td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">web store</td>
+            <td style="padding:10px 16px;"><span class="mono" style="font-size:.85rem;">SQLite · sessions · pages · media files</span></td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">templates</td>
+            <td style="padding:10px 16px;"><span class="mono" style="font-size:.85rem;">Jinja2</span></td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">crypto</td>
+            <td style="padding:10px 16px;"><span class="mono" style="font-size:.85rem;">secp256k1 (repo signing) · Argon2id (passwords)</span></td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">tunnel</td>
+            <td style="padding:10px 16px;"><span class="mono" style="font-size:.85rem;">Cloudflare Tunnel · mycrab.space</span></td>
+          </tr>
+          <tr>
+            <td class="mono text-dim" style="font-size:.78rem; padding:10px 16px;">protocol</td>
+            <td style="padding:10px 16px;">
+              <a class="mono" style="font-size:.85rem; color:var(--cyan);"
+                 href="https://atproto.com" target="_blank" rel="noopener">
+                AT Protocol (atproto.com) ↗
+              </a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ── Web UI Routes ── #}
+  <section style="margin-bottom:40px;">
+    <h2 class="section-label" style="font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--cyan); margin-bottom:16px;">Web UI Routes</h2>
+    <div class="panel">
+      <table style="width:100%;">
+        <thead>
+          <tr>
+            <th style="padding:8px 16px; font-size:.72rem; color:var(--dim); font-weight:500; text-align:left;">path</th>
+            <th style="padding:8px 16px; font-size:.72rem; color:var(--dim); font-weight:500; text-align:left;">description</th>
+            <th style="padding:8px 16px; font-size:.72rem; color:var(--dim); font-weight:500; text-align:left;">access</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set routes = [
+            ("/", "Public homepage — profile + post feed + pages", "public"),
+            ("/p/{slug}", "Published markdown page", "public"),
+            ("/media/{filename}", "Public media file", "public"),
+            ("/node-info", "This page — node tech details", "public"),
+            ("/login", "Web session login", "public"),
+            ("/dashboard", "Stats, quick actions, app tiles", "auth"),
+            ("/compose", "Write and publish ATProto posts", "auth"),
+            ("/files", "Upload and manage media files", "auth"),
+            ("/pages", "Create and manage markdown pages", "auth"),
+          ] %}
+          {% for path, desc, access in routes %}
+          <tr>
+            <td class="mono" style="font-size:.78rem; padding:10px 16px; white-space:nowrap; color:var(--fg);">{{ path }}</td>
+            <td style="padding:10px 16px; font-size:.85rem; color:var(--dim);">{{ desc }}</td>
+            <td style="padding:10px 16px;">
+              <span class="badge {{ 'badge--live' if access == 'public' else 'badge--draft' }}" style="font-size:.68rem;">
+                {{ access }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ── Source ── #}
+  <section>
+    <h2 class="section-label" style="font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--cyan); margin-bottom:16px;">Source</h2>
+    <div class="panel" style="padding:20px 24px;">
+      <p style="font-size:.88rem; color:var(--dim); margin-bottom:12px;">
+        This node runs a fork of <strong style="color:var(--fg);">millipds</strong> extended with a Personal Home Node layer —
+        web sessions, page publishing, file hosting, and a compose UI — on top of the standard ATProto PDS.
+      </p>
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <a class="btn btn--ghost btn--sm" href="https://github.com/isgudtek/millipds" target="_blank" rel="noopener">
+          millipds upstream ↗
+        </a>
+        <a class="btn btn--ghost btn--sm" href="https://atproto.com/guides/self-hosting" target="_blank" rel="noopener">
+          atproto self-hosting ↗
+        </a>
+        <a class="btn btn--ghost btn--sm" href="https://plc.directory/{{ profile.did }}" target="_blank" rel="noopener">
+          DID on plc.directory ↗
+        </a>
+      </div>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

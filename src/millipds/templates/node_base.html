@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ node_handle or 'node' }}{% endblock %} · millipds</title>
+<link rel="stylesheet" href="/static/node.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.ico">
+{% block head %}{% endblock %}
+</head>
+<body>
+<div class="site-wrap">
+
+<nav class="nav">
+  <div class="container nav__inner">
+    <span class="nav__logo">{{ node_handle or 'node' }}<span>.pds</span></span>
+    <span class="nav__dot"></span>
+    <ul class="nav__links">
+      <li><a href="/">home</a></li>
+      <li><a href="/gallery">gallery</a></li>
+      {% if session %}
+        <li><a href="/dashboard">dashboard</a></li>
+        <li><a href="/compose">compose</a></li>
+        <li><a href="/files">files</a></li>
+        <li><a href="/pages">pages</a></li>
+        <li><a href="/logout">logout</a></li>
+      {% else %}
+        <li><a href="/login">login</a></li>
+      {% endif %}
+    </ul>
+  </div>
+</nav>
+
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <div class="container footer__inner">
+    <span class="footer__status">
+      <span class="footer__dot"></span>
+      atproto node online
+    </span>
+    <span class="footer__links">
+      <a href="/node-info">node info</a>
+      <span class="footer__sep">·</span>
+      <span>{{ version or 'millipds' }}</span>
+    </span>
+  </div>
+</footer>
+
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>
