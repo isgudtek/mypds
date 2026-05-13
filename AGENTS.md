@@ -4,65 +4,89 @@ This file is for AI agents. Follow it top-to-bottom to go from zero to a live, f
 
 ---
 
-## What you're building
+## Step 0 — Choose deployment modality
 
-A self-hosted ATProto PDS with a full web UI: posts, blog pages, gallery, file hosting, and a compose UI. All data lives in the user's ATProto repo (MST), propagated on the Bluesky firehose.
+**Ask the user which modality they want before doing anything else.** The answer determines domain, tunnel, and DNS setup for all subsequent steps.
 
-**Stack:** Python 3.10+, aiohttp, SQLite (apsw), Jinja2, Cloudflare Tunnel (or nginx+certbot).
+| # | Modality | Best for | What you need |
+|---|----------|----------|---------------|
+| **A** | **mycrab.space** (recommended) | Fastest setup, no domain required | mycrab admin key (see below) |
+| **B** | **Cloudflare Tunnel** + own domain | User has a domain on Cloudflare | Cloudflare account + domain |
+| **C** | **nginx + certbot** + own domain | VPS with open ports 80/443 | Domain pointing to server IP |
+| **D** | **Other reverse proxy** | Advanced users | User provides their setup |
 
----
-
-## Prerequisites
-
-Confirm these before starting:
-
-- [ ] A domain or subdomain the user controls (e.g. `pds.example.com`)
-- [ ] DNS managed somewhere (Cloudflare recommended — free tunnel)
-- [ ] Python 3.10+ on the server
-- [ ] Either: a Cloudflare account (tunnel) or nginx + SSL cert
+If the user says **"use mycrab"**, **"mycrab skill"**, or any variant — jump directly to [Modality A](#modality-a--mycrabs-pace-skill) below. Do not ask further questions about the domain.
 
 ---
 
-## Step 1 — Install mypds
+## Modality A — mycrab.space skill
+
+> Use this when the user says "use mycrab", "mycrab skill", or similar.
+
+### A1 — Provision a new crab (subdomain)
 
 ```bash
-# On the server
-python3 -m venv /opt/mypds/.venv
-source /opt/mypds/.venv/bin/activate
-pip install --upgrade pip
-pip install git+https://github.com/isgudtek/mypds
+# Admin key is at /root/mycrabs/taskai/.mycrab_admin_key on the mycrab server
+ADMIN_KEY=$(cat /root/mycrabs/taskai/.mycrab_admin_key)
+
+# Pick a subdomain slug — use the user's name, project name, or ask
+SLUG="alice"   # e.g. alice.mycrab.space
+
+curl -s -X POST https://taskai.mycrab.space/api/mycrab/generate \
+  -H "X-Admin-Key: $ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"subdomain\": \"$SLUG\", \"label\": \"mypds - $SLUG\"}"
 ```
+
+Response:
+```json
+{"token": "...", "subdomain": "alice", "url": "https://alice.mycrab.space"}
+```
+
+Record `DOMAIN=alice.mycrab.space` and `PDS_URL=https://alice.mycrab.space`.
+
+**Default handle = the mycrab domain** → `HANDLE="alice.mycrab.space"`
+
+### A2 — Ask about vanity domain (optional)
+
+After provisioning the crab, ask the user:
+
+> "Your PDS will be live at `https://alice.mycrab.space`. Do you have a custom domain you'd like to use as your handle instead? (e.g. `alice.com` or `pds.alice.com`) — totally optional, the mycrab domain works fine on its own."
+
+- If **yes**: set `HANDLE` to the vanity domain and configure DNS handle resolution per Step 4 below. The PDS URL stays as the mycrab domain.
+- If **no**: proceed with `HANDLE=alice.mycrab.space`. Handle resolution is automatic (mycrab.space handles `.well-known/atproto-did` at the subdomain level).
+
+### A3 — Tunnel setup (already done by mycrab)
+
+mycrab.space uses Cloudflare Tunnel internally. No tunnel setup needed. The subdomain is live immediately after provisioning.
 
 Verify:
 ```bash
-mypds --help
+curl -sI https://alice.mycrab.space | head -1
+# Expected: HTTP/2 200 (or 502 — fine, mypds not started yet)
 ```
+
+Then **skip to [Step 1 — Install mypds](#step-1--install-mypds)**.
 
 ---
 
-## Step 2 — Expose to the internet FIRST
-
-**This must happen before creating the DID.** The PLC genesis op needs to reference your public HTTPS endpoint.
-
-### Option A — Cloudflare Tunnel (recommended, no open ports)
+## Modality B — Cloudflare Tunnel + own domain
 
 ```bash
 # Install cloudflared
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
-chmod +x /usr/local/bin/cloudflared
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+  -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
 
-# Log in (opens browser — user must do this)
+# Log in — user must open browser link
 cloudflared tunnel login
 
-# Create tunnel
+# Create tunnel and route domain
 cloudflared tunnel create mypds
+cloudflared tunnel route dns mypds pds.example.com   # replace with actual domain
 
-# Route your domain to it
-cloudflared tunnel route dns mypds pds.example.com
-
-# Config file at ~/.cloudflared/config.yml:
+# Config
 cat > ~/.cloudflared/config.yml <<EOF
-tunnel: <TUNNEL_ID_FROM_ABOVE>
+tunnel: <TUNNEL_ID>
 credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
 
 ingress:
@@ -71,14 +95,22 @@ ingress:
   - service: http_status:404
 EOF
 
-# Start tunnel (in background or as systemd service)
 cloudflared tunnel run mypds &
 ```
 
-### Option B — nginx + certbot
+Set: `DOMAIN="pds.example.com"`, `PDS_URL="https://pds.example.com"`, `HANDLE="pds.example.com"` (or ask user for preferred handle).
+
+Verify HTTPS is live:
+```bash
+curl -sI https://pds.example.com | head -1
+```
+
+---
+
+## Modality C — nginx + certbot
 
 ```bash
-apt install nginx certbot python3-certbot-nginx
+apt install -y nginx certbot python3-certbot-nginx
 
 cat > /etc/nginx/sites-enabled/mypds <<'EOF'
 server {
@@ -101,103 +133,105 @@ nginx -s reload
 certbot --nginx -d pds.example.com
 ```
 
-Verify your domain is live (should return connection refused or 502 since mypds isn't started yet — that's fine, HTTPS must work):
+Set: `DOMAIN="pds.example.com"`, `PDS_URL="https://pds.example.com"`, `HANDLE="pds.example.com"`.
+
+---
+
+## Step 1 — Install mypds
+
 ```bash
-curl -sI https://pds.example.com | head -1
+python3 -m venv /opt/mypds/.venv
+source /opt/mypds/.venv/bin/activate
+pip install --upgrade pip
+pip install git+https://github.com/isgudtek/mypds
+```
+
+Verify:
+```bash
+mypds --help
 ```
 
 ---
 
-## Step 3 — Create the ATProto identity (DID)
+## Step 2 — Create the ATProto identity (DID)
 
-The handle is what users see (`@alice.example.com`). The DID is permanent.
+> By this point you must have: `$PDS_URL` (HTTPS, live), `$HANDLE` (final handle including optional vanity domain).
 
 ```bash
-# Clone mypds to get the identity creation script
 git clone https://github.com/isgudtek/mypds /tmp/mypds-setup
 cd /tmp/mypds-setup
-
-# IMPORTANT: replace these values
-HANDLE="alice.example.com"        # the user's handle
-PDS_URL="https://pds.example.com" # must be HTTPS, must be reachable
 
 ./test_data/create_identity.sh "$HANDLE" "$PDS_URL" https://plc.directory
 ```
 
-Successful output includes:
+Successful output:
 ```
-Created identity for alice.example.com at https://plc.directory/did:plc:xxxxxxxxxxxx
-rotation key → alice.example.com_rotation_key.pem   ← STORE SAFELY, NEVER ON SERVER
-repo signing key → alice.example.com_repo_key.pem   ← needed on server
-did:plc string → alice.example.com_did.txt
+Created identity for alice.mycrab.space at https://plc.directory/did:plc:xxxxxxxxxxxx
+rotation key → alice.mycrab.space_rotation_key.pem   ← STORE SAFELY, NEVER ON SERVER
+repo signing key → alice.mycrab.space_repo_key.pem   ← needed on server
+did:plc string → alice.mycrab.space_did.txt
 ```
 
-**Save the rotation key somewhere safe and offline.** If the server is compromised, the rotation key lets you recover the identity.
+**Tell the user:** The rotation key is their master identity key. They must save it offline and keep it off the server. If it's lost, the DID cannot be recovered.
 
-Copy the repo signing key to the server:
 ```bash
-cp alice.example.com_repo_key.pem /opt/mypds/repo_key.pem
+cp "${HANDLE}_repo_key.pem" /opt/mypds/repo_key.pem
 chmod 600 /opt/mypds/repo_key.pem
+DID=$(cat "${HANDLE}_did.txt")
 ```
 
 ---
 
-## Step 4 — DNS handle resolution
+## Step 3 — DNS handle resolution
 
-The handle must resolve to the DID. Two methods — pick one:
+Skip this step if **Modality A with no vanity domain** — mycrab.space handles it automatically.
 
-### Method A — DNS TXT record (recommended)
-Add a TXT record at `_atproto.alice` (or `_atproto.alice.example.com` if handle is a subdomain) with value:
-```
-did=did:plc:xxxxxxxxxxxx
-```
+Otherwise, the handle must resolve to the DID. Two methods:
 
-### Method B — well-known file
-Serve `https://alice.example.com/.well-known/atproto-did` with the DID as the body.
+### Method A — DNS TXT record
+Add a TXT record at `_atproto.<handle-subdomain>` with value `did=<DID>`.
 
-Verify resolution:
+For `alice.example.com`: TXT record at `_atproto.alice.example.com` → `did=did:plc:xxxxxxxxxxxx`
+
+### Method B — well-known endpoint
+Serve `https://<HANDLE>/.well-known/atproto-did` returning just the DID string as body.
+
+Verify:
 ```bash
-dig TXT _atproto.alice.example.com +short
-# should return: "did=did:plc:xxxxxxxxxxxx"
+dig TXT "_atproto.$HANDLE" +short
+# or
+curl "https://$HANDLE/.well-known/atproto-did"
 ```
 
 ---
 
-## Step 5 — Create the account
+## Step 4 — Create the account
 
 ```bash
 source /opt/mypds/.venv/bin/activate
 
-DID=$(cat /tmp/mypds-setup/alice.example.com_did.txt)
-
-mypds account create "$DID" alice.example.com \
+mypds account create "$DID" "$HANDLE" \
   --signing_key=/opt/mypds/repo_key.pem \
-  --pds-pfx=https://pds.example.com \
+  --pds-pfx="$PDS_URL" \
   --pds-did-plc=https://plc.directory
 ```
 
-You'll be prompted for a password. This is the web UI login password.
+You'll be prompted for a password interactively. This is the web UI login password — set something strong.
 
 ---
 
-## Step 6 — Start mypds
+## Step 5 — Start mypds
 
+### Quick start (foreground / testing)
 ```bash
 source /opt/mypds/.venv/bin/activate
-
-mypds run \
-  --pds-pfx=https://pds.example.com \
-  --pds-did-plc=https://plc.directory \
-  --port=3030 \
-  &>> /var/log/mypds.log &
-
-echo $! > /var/run/mypds.pid
+mypds run --pds-pfx="$PDS_URL" --pds-did-plc=https://plc.directory --port=3030
 ```
 
-### As a systemd service (recommended for production)
+### Production — systemd service
 
-```ini
-# /etc/systemd/system/mypds.service
+```bash
+cat > /etc/systemd/system/mypds.service <<EOF
 [Unit]
 Description=mypds ATProto Personal Home Node
 After=network.target
@@ -207,13 +241,12 @@ Type=simple
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=/opt/mypds
-ExecStart=/opt/mypds/.venv/bin/mypds run --pds-pfx=https://pds.example.com --pds-did-plc=https://plc.directory --port=3030
+ExecStart=/opt/mypds/.venv/bin/mypds run --pds-pfx=$PDS_URL --pds-did-plc=https://plc.directory --port=3030
 
 [Install]
 WantedBy=multi-user.target
-```
+EOF
 
-```bash
 systemctl daemon-reload
 systemctl enable --now mypds
 systemctl status mypds
@@ -221,48 +254,50 @@ systemctl status mypds
 
 ---
 
-## Step 7 — Tell the relay you exist
+## Step 6 — Tell the relay you exist
 
-The Bluesky relay (`bsky.network`) doesn't find you automatically. Request a crawl:
+The Bluesky relay does not auto-discover new PDSes. Request a crawl:
 
 ```bash
-curl --json '{"hostname":"https://pds.example.com"}' \
+curl --json "{\"hostname\":\"$PDS_URL\"}" \
   "https://bsky.network/xrpc/com.atproto.sync.requestCrawl"
-# Expected: HTTP 200 {}
+# Expected: {}
 ```
 
-mypds does this automatically on startup with a retry loop (5 attempts, 0/8/16/24/32s backoff) to handle tunnel startup lag. You shouldn't need to run this manually, but do it once anyway to be sure.
+mypds also does this automatically on startup (5 attempts, 0/8/16/24/32s backoff). But run it manually once to be safe.
 
 ---
 
-## Step 8 — Trigger identity/account events
+## Step 7 — Trigger identity + account events
 
-The relay and appview need to know your account exists:
+The appview won't index you until it sees events on the firehose:
 
-1. Log into [bsky.app](https://bsky.app) with:
-   - Handle: `alice.example.com`
-   - Password: the one you set in Step 5
-   - Custom PDS: `https://pds.example.com`
+1. Log into **bsky.app** → Advanced → use custom PDS: `$PDS_URL`
+   - Handle: `$HANDLE`
+   - Password: set in Step 4
 
-2. Go to Settings → Change Handle → set it to `alice.example.com` again (even though it's the same). This emits an `#identity` event to the firehose.
+2. **Settings → Handle → "Change" it to the same value.** This emits an `#identity` event to the firehose — required for the relay to associate your DID with the PDS.
 
-3. Set a display name and/or bio. This creates your profile record and prompts the appview to start indexing.
+3. Set a display name / bio. Creates the profile record, prompts appview indexing.
 
-4. Post something. Check that it appears on `bsky.app` under your profile.
+4. Post something. Verify it appears on bsky.app under your profile.
 
 ---
 
-## Step 9 — Access the web UI
+## Step 8 — Access the web UI
 
-Open `https://pds.example.com` in a browser. You should see:
+Open `$PDS_URL` in a browser:
 
-- Homepage with your handle, recent posts, sidebar
-- `/login` — log in with your password
-- `/dashboard` — compose, gallery, pages, files
-- `/gallery` — `pub.gallery.image` photo grid
-- `/pages` — `com.whtwnd.blog.entry` blog pages
-- `/files` — blob store file uploads
-- `/node-info` — public ATProto endpoints and stats
+| Path | Auth | Description |
+|------|------|-------------|
+| `/` | public | Home: profile, posts, gallery preview |
+| `/login` | — | Log in with your password |
+| `/dashboard` | owner | Stats, quick actions, app tiles |
+| `/compose` | owner | Write ATProto posts |
+| `/gallery` | public | `pub.gallery.image` photo grid |
+| `/pages` | owner | `com.whtwnd.blog.entry` blog pages |
+| `/files` | owner | Upload files via blob store |
+| `/node-info` | public | DID, ATProto endpoints, stats |
 
 ---
 
@@ -271,41 +306,37 @@ Open `https://pds.example.com` in a browser. You should see:
 ### Port already in use
 ```bash
 kill $(lsof -ti:3030) 2>/dev/null; sleep 1
-# then restart mypds
+systemctl restart mypds
 ```
 
 ### Relay not indexing posts
 ```bash
-# Manual crawl request
-curl --json '{"hostname":"https://pds.example.com"}' \
+curl --json "{\"hostname\":\"$PDS_URL\"}" \
   "https://bsky.network/xrpc/com.atproto.sync.requestCrawl"
 
 # Check firehose is emitting
-websocat "wss://pds.example.com/xrpc/com.atproto.sync.subscribeRepos"
+websocat "wss://$DOMAIN/xrpc/com.atproto.sync.subscribeRepos"
 ```
 
 ### Handle not resolving
 ```bash
-# Test DNS method
-dig TXT _atproto.alice.example.com +short
-
-# Test well-known method
-curl https://alice.example.com/.well-known/atproto-did
+dig TXT "_atproto.$HANDLE" +short
+curl "https://$HANDLE/.well-known/atproto-did"
 ```
 
-### Tunnel dies and relay loses connection
-mypds auto-requests crawl on startup. Restart mypds after restarting the tunnel:
+### Tunnel dies, relay loses WebSocket
+mypds auto-requests crawl on startup. Just restart mypds after tunnel comes back:
 ```bash
 systemctl restart mypds
 ```
 
-### `describeServer` returns wrong PDS URL
-The `--pds-pfx` flag must exactly match your public HTTPS URL. No trailing slash.
+### `describeServer` returns wrong URL
+`--pds-pfx` must exactly match the public HTTPS URL. No trailing slash.
 
-### Posts appear locally but not on bsky.app
-1. Check `requestCrawl` was called after the tunnel was live
-2. In bsky.app Settings, re-save your handle to emit an `#identity` event
-3. Wait ~60s for relay to crawl and appview to index
+### Posts show locally but not on bsky.app
+1. Verify `requestCrawl` was called after tunnel was live
+2. Re-save handle in bsky.app Settings to emit `#identity`
+3. Wait ~60s for relay + appview
 
 ---
 
@@ -319,16 +350,16 @@ systemctl restart mypds
 
 ---
 
-## File layout after setup
+## File layout
 
 ```
 /opt/mypds/
 ├── .venv/              # Python virtualenv
-├── repo_key.pem        # ATProto repo signing key (keep secret)
-├── millipds.db         # ATProto repo (MST, blobs, DIDs, auth)
-└── web.sqlite3         # Web layer (sessions, pages, media metadata)
+├── repo_key.pem        # ATProto repo signing key (keep secret, but OK on server)
+├── millipds.db         # ATProto repo: MST, blobs, DIDs, auth
+└── web.sqlite3         # Web layer: sessions, pages, media metadata
 
-# Keep these offline / backed up securely:
-alice.example.com_rotation_key.pem   # identity rotation key — never put on server
-alice.example.com_did.txt            # your DID string
+# Store these offline, never on server:
+<handle>_rotation_key.pem   # master identity key — loss = unrecoverable DID
+<handle>_did.txt            # DID string backup
 ```
