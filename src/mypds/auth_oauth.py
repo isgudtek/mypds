@@ -416,14 +416,18 @@ async def oauth_pushed_authorization_request(request: web.Request):
 	else:
 		data = await request.post()
 
+	logger.info(f"PAR request data: {dict(data)}")
+
 	# Verify client_id matches DPoP issuer if iss is present
 	if request.get("dpop_iss") and data.get("client_id") != request.get("dpop_iss"):
 		raise web.HTTPBadRequest(text="client_id does not match dpop iss")
 
 	# Verify required fields
-	for field in ["client_id", "redirect_uri", "scope", "code_challenge", "code_challenge_method"]:
-		if field not in data:
-			raise web.HTTPBadRequest(text=f"missing required field: {field}")
+	required_fields = ["client_id", "redirect_uri", "scope", "code_challenge", "code_challenge_method"]
+	missing = [f for f in required_fields if f not in data]
+	if missing:
+		logger.error(f"PAR missing fields: {missing}, got: {list(data.keys())}")
+		raise web.HTTPBadRequest(text=f"missing required fields: {', '.join(missing)}")
 
 	if data["code_challenge_method"] != "S256":
 		raise web.HTTPBadRequest(text="only S256 code_challenge_method is supported")
@@ -473,17 +477,26 @@ async def oauth_pushed_authorization_request(request: web.Request):
 @dpop_protected
 async def oauth_token(request: web.Request):
 	"""Exchange authorization code for access token"""
-	data = await request.json()
 	db = get_db(request)
 	cfg = db.config
 
+	# Handle both JSON and form-encoded POST data
+	content_type = request.headers.get("content-type", "").lower()
+	if "application/json" in content_type:
+		data = await request.json()
+	else:
+		data = await request.post()
+
+	logger.info(f"Token request data: {dict(data)}")
+
 	# Verify grant_type
 	if data.get("grant_type") != "authorization_code":
-		raise web.HTTPBadRequest(text="only authorization_code grant type is supported")
+		raise web.HTTPBadRequest(text=f"unsupported grant_type: {data.get('grant_type')}")
 
 	# Look up and validate authorization code
 	code = data.get("code")
 	if not code:
+		logger.error("Token request missing code")
 		raise web.HTTPBadRequest(text="missing code")
 
 	auth_code_row = db.con.execute(
