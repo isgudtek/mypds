@@ -230,14 +230,14 @@ async def oauth_authorize(request: web.Request):
 
 	# Look up PAR request
 	par_row = db.con.execute(
-		"SELECT client_id, scope, expires_at FROM oauth_par_request WHERE request_uri=?",
+		"SELECT client_id, scope, state, expires_at FROM oauth_par_request WHERE request_uri=?",
 		(request_uri,),
 	).fetchone()
 
 	if not par_row:
 		raise web.HTTPBadRequest(text="invalid request_uri")
 
-	client_id, scope, expires_at = par_row
+	client_id, scope, state, expires_at = par_row
 
 	if expires_at < int(time.time()):
 		raise web.HTTPBadRequest(text="request_uri expired")
@@ -271,14 +271,14 @@ async def oauth_authorize_handle_login(request: web.Request):
 
 	# Look up PAR request
 	par_row = db.con.execute(
-		"SELECT client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk, expires_at FROM oauth_par_request WHERE request_uri=?",
+		"SELECT client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk, state, expires_at FROM oauth_par_request WHERE request_uri=?",
 		(request_uri,),
 	).fetchone()
 
 	if not par_row:
 		raise web.HTTPBadRequest(text="invalid request_uri")
 
-	client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk_blob, expires_at = par_row
+	client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk_blob, state, expires_at = par_row
 
 	if expires_at < int(time.time()):
 		raise web.HTTPBadRequest(text="request_uri expired")
@@ -316,16 +316,11 @@ async def oauth_authorize_handle_login(request: web.Request):
 		),
 	)
 
-	# Redirect back to client with code
+	# Redirect back to client with code and state
 	redirect_url = f"{redirect_uri}?code={auth_code}&iss={cfg['auth_pfx']}"
 
-	# Retrieve state from PAR request if stored
-	stored_state = None
-	if hasattr(request.app, "par_state") and request_uri in request.app.get("par_state", {}):
-		stored_state = request.app["par_state"].pop(request_uri)
-
-	if stored_state:
-		redirect_url += f"&state={stored_state}"
+	if state:
+		redirect_url += f"&state={state}"
 
 	return web.Response(
 		status=302,
@@ -438,8 +433,7 @@ async def oauth_pushed_authorization_request(request: web.Request):
 	request_uri = generate_request_uri()
 	expires_at = int(time.time()) + 600  # 10 minutes
 
-	# Store state in request context if provided (will be retrieved later)
-	# Note: state is typically in PAR data but handled separately
+	# Extract state if provided
 	state = data.get("state", "")
 
 	# Store PAR request
@@ -447,8 +441,8 @@ async def oauth_pushed_authorization_request(request: web.Request):
 		"""
 		INSERT INTO oauth_par_request(
 			request_uri, client_id, redirect_uri, scope,
-			code_challenge, code_challenge_method, dpop_jwk, expires_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			code_challenge, code_challenge_method, dpop_jwk, state, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		""",
 		(
 			request_uri,
@@ -458,14 +452,10 @@ async def oauth_pushed_authorization_request(request: web.Request):
 			data["code_challenge"],
 			data["code_challenge_method"],
 			request["dpop_jwk"],
+			state if state else None,
 			expires_at,
 		),
 	)
-
-	# Store state temporarily (using a simple in-memory approach for now)
-	if state:
-		request.app["par_state"] = request.app.get("par_state", {})
-		request.app["par_state"][request_uri] = state
 
 	return web.json_response(
 		{

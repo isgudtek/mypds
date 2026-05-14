@@ -315,6 +315,7 @@ class Database:
 				code_challenge TEXT NOT NULL,
 				code_challenge_method TEXT NOT NULL DEFAULT 'S256',
 				dpop_jwk BLOB NOT NULL,
+				state TEXT,
 				expires_at INTEGER NOT NULL
 			) STRICT, WITHOUT ROWID
 			"""
