@@ -1,16 +1,28 @@
 import logging
 import json
+import hashlib
+import base64
 
 import jwt
 from aiohttp import web
+from cryptography.hazmat.primitives import serialization
 
 from .app_util import *
 from . import util
 from . import crypto
+from . import cbrrr
 
 logger = logging.getLogger(__name__)
 
 routes = web.RouteTableDef()
+
+
+def jwk_thumbprint(jwk_dict: dict) -> str:
+	"""Compute JWK thumbprint per RFC 7638"""
+	required = {k: jwk_dict[k] for k in sorted(["crv", "kty", "x", "y"]) if k in jwk_dict}
+	canon = json.dumps(required, separators=(',', ':'), sort_keys=True)
+	digest = hashlib.sha256(canon.encode()).digest()
+	return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
 
 
 def verify_symmetric_token(
@@ -85,10 +97,58 @@ def authenticated(handler):
 			token, options={"verify_signature": False}
 		)
 		# logger.info(unverified)
+
+		cfg = db.config
+
 		if unverified["header"]["alg"] == "HS256":  # symmetric secret
 			request["authed_did"] = verify_symmetric_token(
 				request, token, "com.atproto.access"
 			)["sub"]
+		elif unverified["payload"].get("iss") == cfg["auth_pfx"]:  # OAuth access token
+			# Verify with server AS public key
+			privkey_pem = cfg["server_as_privkey"]
+			privkey = serialization.load_pem_private_key(privkey_pem.encode(), password=None)
+			pubkey = privkey.public_key()
+
+			try:
+				payload = jwt.decode(
+					jwt=token,
+					key=pubkey,
+					algorithms=["ES256"],
+					issuer=cfg["auth_pfx"],
+					audience=cfg["pds_pfx"],
+					options={
+						"require": ["exp", "iat", "sub", "cnf", "jti"],
+						"verify_exp": True,
+						"verify_iat": True,
+						"strict_aud": True,
+					},
+				)
+			except jwt.exceptions.PyJWTError as e:
+				raise web.HTTPUnauthorized(text=f"invalid oauth token: {e}")
+
+			# Verify DPoP binding if present
+			if "cnf" in payload and "jkt" in payload["cnf"]:
+				dpop = request.headers.get("dpop")
+				if not dpop:
+					raise web.HTTPUnauthorized(text="dpop required for this token")
+
+				try:
+					unverified_dpop = jwt.api_jwt.decode_complete(
+						dpop, options={"verify_signature": False}
+					)
+					jwk_data = unverified_dpop["header"]["jwk"]
+					jwk = jwt.PyJWK.from_dict(jwk_data)
+					jwt.decode(dpop, key=jwk)  # verify signature
+
+					# Verify thumbprint matches
+					current_jkt = jwk_thumbprint(jwk_data)
+					if current_jkt != payload["cnf"]["jkt"]:
+						raise web.HTTPUnauthorized(text="dpop jkt mismatch")
+				except jwt.exceptions.PyJWTError:
+					raise web.HTTPUnauthorized(text="invalid dpop proof")
+
+			request["authed_did"] = payload["sub"]
 		else:  # asymmetric service auth (scoped to a specific lxm)
 			did: str = unverified["payload"]["iss"]
 			if not did.startswith("did:"):
