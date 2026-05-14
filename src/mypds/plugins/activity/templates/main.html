@@ -1,0 +1,237 @@
+{% extends "node_base.html" %}
+{% block title %}activity{% endblock %}
+
+{% block head %}
+<style>
+.act-wrap {
+  padding-top: 32px;
+  padding-bottom: 60px;
+}
+.act-header {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-bottom: 24px;
+}
+.act-header h1 { font-size: 1.2rem; font-weight: 700; margin: 0; }
+.act-handle { font-size: .8rem; color: var(--dim); font-family: var(--mono); }
+
+/* Stats row */
+.act-stats {
+  display: flex; gap: 20px; flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+.act-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 16px;
+  min-width: 90px;
+}
+.act-stat__val {
+  font-size: 1.4rem; font-weight: 700;
+  font-family: var(--mono); color: var(--text);
+  line-height: 1.2;
+}
+.act-stat__label {
+  font-size: .65rem; color: var(--dim);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin-top: 2px;
+}
+
+/* Heatmap */
+.act-graph {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 20px 20px 16px;
+  overflow-x: auto;
+}
+.act-graph__inner {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: max-content;
+}
+.act-month-row {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 4px;
+  padding-left: 28px; /* align with day-label offset */
+}
+.act-month-label {
+  font-size: .62rem; color: var(--dim); font-family: var(--mono);
+  width: 13px; text-align: left;
+  white-space: nowrap;
+  overflow: visible;
+}
+.act-rows {
+  display: flex; gap: 0;
+}
+.act-day-labels {
+  display: flex; flex-direction: column; gap: 3px;
+  margin-right: 6px;
+  padding-top: 1px;
+}
+.act-day-label {
+  font-size: .6rem; color: var(--dim); font-family: var(--mono);
+  height: 13px; line-height: 13px;
+  width: 20px; text-align: right;
+}
+.act-cols {
+  display: flex; gap: 3px;
+}
+.act-col {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.act-cell {
+  width: 13px; height: 13px;
+  border-radius: 2px;
+  cursor: default;
+  transition: transform .1s;
+  position: relative;
+}
+.act-cell:hover { transform: scale(1.3); z-index: 10; }
+.act-cell--future { opacity: 0; pointer-events: none; }
+.level-0 { background: var(--surface2); }
+.level-1 { background: color-mix(in srgb, var(--cyan) 28%, var(--surface2)); }
+.level-2 { background: color-mix(in srgb, var(--cyan) 52%, var(--surface2)); }
+.level-3 { background: color-mix(in srgb, var(--cyan) 76%, var(--surface2)); }
+.level-4 { background: var(--cyan); }
+
+/* Tooltip via title is fine; JS tooltip below for better UX */
+.act-tooltip {
+  position: fixed; z-index: 100;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 5px; padding: 5px 9px;
+  font-size: .7rem; font-family: var(--mono); color: var(--text);
+  pointer-events: none; display: none; white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+}
+
+/* Legend */
+.act-legend {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 12px;
+  font-size: .65rem; color: var(--dim); font-family: var(--mono);
+  justify-content: flex-end;
+}
+.act-legend-cell {
+  width: 11px; height: 11px; border-radius: 2px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container act-wrap">
+
+  <div class="act-header">
+    <h1>Activity</h1>
+    {% if handle %}<span class="act-handle">{{ handle }}</span>{% endif %}
+    <span style="margin-left:auto; font-size:.75rem; color:var(--dim); font-family:var(--mono);">last 52 weeks</span>
+  </div>
+
+  <!-- Stats -->
+  <div class="act-stats">
+    <div class="act-stat">
+      <div class="act-stat__val">{{ stats.total }}</div>
+      <div class="act-stat__label">total records</div>
+    </div>
+    <div class="act-stat">
+      <div class="act-stat__val">{{ stats.active_days }}</div>
+      <div class="act-stat__label">active days</div>
+    </div>
+    <div class="act-stat">
+      <div class="act-stat__val">{{ stats.cur_streak }}</div>
+      <div class="act-stat__label">day streak</div>
+    </div>
+    <div class="act-stat">
+      <div class="act-stat__val">{{ stats.longest }}</div>
+      <div class="act-stat__label">longest streak</div>
+    </div>
+    {% if stats.busiest_count > 0 %}
+    <div class="act-stat">
+      <div class="act-stat__val">{{ stats.busiest_count }}</div>
+      <div class="act-stat__label">busiest day<br><span style="font-size:.6rem;color:var(--dim)">{{ stats.busiest_date }}</span></div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Heatmap -->
+  <div class="act-graph">
+    <div class="act-graph__inner">
+
+      <!-- Month labels row -->
+      <div class="act-month-row">
+        {% for week in grid %}
+        <div class="act-month-label">
+          {% for day in week %}{% if day.month and loop.first %}{{ day.month }}{% endif %}{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="act-rows">
+        <!-- Day-of-week labels -->
+        <div class="act-day-labels">
+          <div class="act-day-label">Mon</div>
+          <div class="act-day-label"></div>
+          <div class="act-day-label">Wed</div>
+          <div class="act-day-label"></div>
+          <div class="act-day-label">Fri</div>
+          <div class="act-day-label"></div>
+          <div class="act-day-label">Sun</div>
+        </div>
+
+        <!-- Grid columns -->
+        <div class="act-cols">
+          {% for week in grid %}
+          <div class="act-col">
+            {% for day in week %}
+            <div class="act-cell level-{{ day.level }} {% if day.future %}act-cell--future{% endif %}"
+                 data-date="{{ day.date }}"
+                 data-count="{{ day.count }}"></div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="act-legend">
+        less
+        <div class="act-legend-cell level-0"></div>
+        <div class="act-legend-cell level-1"></div>
+        <div class="act-legend-cell level-2"></div>
+        <div class="act-legend-cell level-3"></div>
+        <div class="act-legend-cell level-4"></div>
+        more
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Tooltip -->
+<div class="act-tooltip" id="act-tip"></div>
+
+<script>
+(function() {
+  const tip = document.getElementById('act-tip');
+  const cells = document.querySelectorAll('.act-cell:not(.act-cell--future)');
+  cells.forEach(cell => {
+    cell.addEventListener('mouseenter', e => {
+      const count = +cell.dataset.count;
+      const date = cell.dataset.date;
+      tip.textContent = count === 0 ? `no records · ${date}` : `${count} record${count === 1 ? '' : 's'} · ${date}`;
+      tip.style.display = 'block';
+    });
+    cell.addEventListener('mousemove', e => {
+      tip.style.left = (e.clientX + 12) + 'px';
+      tip.style.top  = (e.clientY - 28) + 'px';
+    });
+    cell.addEventListener('mouseleave', () => {
+      tip.style.display = 'none';
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,54 @@
+<style>
+.act-tile-grid { display:flex; gap:2px; margin-top:6px; }
+.act-tile-col  { display:flex; flex-direction:column; gap:2px; }
+.act-tile-cell { width:8px; height:8px; border-radius:1px; }
+.atl-0 { background:var(--surface2); }
+.atl-1 { background:color-mix(in srgb,var(--cyan) 28%,var(--surface2)); }
+.atl-2 { background:color-mix(in srgb,var(--cyan) 52%,var(--surface2)); }
+.atl-3 { background:color-mix(in srgb,var(--cyan) 76%,var(--surface2)); }
+.atl-4 { background:var(--cyan); }
+</style>
+<div class="app-tile" id="act-tile">
+  <div class="app-tile__icon">
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="1.5"
+         stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8"  y1="2" x2="8"  y2="6"/>
+      <line x1="3"  y1="10" x2="21" y2="10"/>
+    </svg>
+  </div>
+  <div class="app-tile__name">activity</div>
+  <div class="act-tile-grid" id="act-mini"></div>
+  <a class="app-tile__btn" href="/activity" style="cursor:pointer;">open</a>
+</div>
+
+<script>
+(function() {
+  fetch('/activity/data').then(r=>r.json()).then(data => {
+    const grid = document.getElementById('act-mini');
+    const weeks = 16;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const start = new Date(today);
+    start.setDate(start.getDate() - weeks * 7);
+    start.setDate(start.getDate() - start.getDay() + 1); // align Mon
+    let cur = new Date(start);
+    while (cur <= today) {
+      const col = document.createElement('div');
+      col.className = 'act-tile-col';
+      for (let i = 0; i < 7; i++) {
+        const ds = cur.toISOString().slice(0,10);
+        const count = data[ds] || 0;
+        const lv = count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : count <= 9 ? 3 : 4;
+        const cell = document.createElement('div');
+        cell.className = `act-tile-cell atl-${lv}`;
+        if (cur > today) cell.style.opacity = '0';
+        col.appendChild(cell);
+        cur.setDate(cur.getDate() + 1);
+      }
+      grid.appendChild(col);
+    }
+  }).catch(()=>{});
+})();
+</script>
