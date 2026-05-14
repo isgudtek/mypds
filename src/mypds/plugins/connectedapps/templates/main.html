@@ -61,13 +61,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.nsid-row__ns {
-  color: var(--dim);
-  flex-shrink: 0;
-}
-.nsid-row__leaf {
-  color: var(--cyan);
-}
+.nsid-row__ns  { color: var(--dim); }
+.nsid-row__leaf { color: var(--cyan); }
 .nsid-row__count {
   color: var(--dim);
   flex-shrink: 0;
@@ -81,6 +76,55 @@
 }
 .nsid-row--write .nsid-row__dot { background: var(--red); }
 .nsid-row--read  .nsid-row__dot { background: var(--cyan); }
+
+/* Records section within card */
+.app-records {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.app-records__label {
+  font-size: .65rem;
+  font-family: var(--mono);
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 6px;
+}
+.app-records__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.app-records__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .72rem;
+  font-family: var(--mono);
+}
+.app-records__nsid .ns  { color: var(--dim); }
+.app-records__nsid .leaf { color: var(--cyan); }
+.app-records__link {
+  color: var(--dim);
+  text-decoration: none;
+  font-size: .65rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.app-records__link:hover { color: var(--cyan); }
+.app-records__timeline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: .7rem;
+  font-family: var(--mono);
+  color: var(--dim);
+  text-decoration: none;
+  cursor: pointer;
+}
+.app-records__timeline:hover { color: var(--text); }
 </style>
 {% endblock %}
 
@@ -88,6 +132,19 @@
 <div class="container" style="padding-top:32px; padding-bottom:60px;">
   <div class="flex items-center gap-8" style="margin-bottom:4px;">
     <h1 style="font-size:1.2rem; font-weight:700;">Connected Apps</h1>
+    {% if has_records %}
+    <a href="/repo-browser/timeline"
+       style="font-size:.75rem;font-family:var(--mono);color:var(--dim);text-decoration:none;display:inline-flex;align-items:center;gap:4px;cursor:pointer;"
+       onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--dim)'">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="20" x2="12" y2="10"/>
+        <line x1="18" y1="20" x2="18" y2="4"/>
+        <line x1="6" y1="20" x2="6" y2="16"/>
+      </svg>
+      timeline
+    </a>
+    {% endif %}
     <span class="text-dim mono" style="margin-left:auto; font-size:.8rem;">{{ connected_apps|length }} app{{ 's' if connected_apps|length != 1 }}</span>
   </div>
   <p style="font-size:.8rem; color:var(--dim); margin-bottom:0;">Every external app that authenticated through this PDS, and the ATProto methods they called.</p>
@@ -113,20 +170,23 @@
         <img class="app-card__favicon"
              src="https://www.google.com/s2/favicons?domain={{ display }}&sz=32"
              alt="" loading="lazy" onerror="this.style.display='none'">
-        <a class="app-card__domain" href="{{ app_url }}" target="_blank" rel="noopener"
+        <a class="app-card__domain" href="/connected-apps/{{ app.domain }}"
            style="text-decoration:none; color:inherit; cursor:pointer;">
           {{ display }}
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24"
+        </a>
+        <a href="{{ app_url }}" target="_blank" rel="noopener"
+           style="margin-left:auto; color:var(--dim); flex-shrink:0; cursor:pointer;"
+           title="open {{ display }}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24"
                fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-               stroke-linejoin="round" style="opacity:.4; vertical-align:middle; margin-left:2px;">
+               stroke-linejoin="round" style="opacity:.4; vertical-align:middle;">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
             <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
           </svg>
         </a>
       </div>
       <div class="app-card__meta">
-        first seen {{ app.first_seen | timestamp }}
-        &nbsp;·&nbsp;
+        first seen {{ app.first_seen | timestamp }}<br>
         last active {{ app.last_seen | timestamp }}
         &nbsp;·&nbsp;
         {{ app.total_calls }} call{{ 's' if app.total_calls != 1 }}
@@ -144,6 +204,34 @@
         </div>
         {% endfor %}
       </div>
+
+      {% if app.record_nsids %}
+      <div class="app-records">
+        <div class="app-records__label">local records</div>
+        <div class="app-records__list">
+          {% for nsid in app.record_nsids %}
+          {% set parts = nsid.rsplit('.', 1) %}
+          <div class="app-records__row">
+            <span class="app-records__nsid">
+              <span class="ns">{{ parts[0] if parts|length > 1 else '' }}.</span><span class="leaf">{{ parts[1] if parts|length > 1 else nsid }}</span>
+            </span>
+            <a class="app-records__link" href="/repo-browser/{{ nsid }}" style="cursor:pointer;">
+              browse →
+            </a>
+          </div>
+          {% endfor %}
+        </div>
+        <a class="app-records__timeline" href="/repo-browser/timeline?domain={{ app.domain }}" style="cursor:pointer;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="20" x2="12" y2="10"/>
+            <line x1="18" y1="20" x2="18" y2="4"/>
+            <line x1="6" y1="20" x2="6" y2="16"/>
+          </svg>
+          timeline for {{ display }}
+        </a>
+      </div>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

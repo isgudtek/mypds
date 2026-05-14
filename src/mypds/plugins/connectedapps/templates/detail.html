@@ -1,0 +1,179 @@
+{% extends "node_base.html" %}
+{% block title %}{{ display }} · connected apps{% endblock %}
+
+{% block head %}
+<style>
+.ca-back {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .78rem; color: var(--dim); font-family: var(--mono);
+  text-decoration: none; margin-bottom: 20px; cursor: pointer;
+}
+.ca-back:hover { color: var(--text); }
+.ca-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 6px;
+}
+.ca-favicon {
+  width: 24px; height: 24px; border-radius: 5px;
+  background: var(--surface2); flex-shrink: 0;
+}
+.ca-title { font-size: 1.2rem; font-weight: 700; }
+.ca-meta {
+  font-size: .75rem; color: var(--dim); font-family: var(--mono);
+  margin-bottom: 28px;
+}
+.ca-section-title {
+  font-size: .7rem; font-family: var(--mono); color: var(--dim);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin-bottom: 10px; margin-top: 28px;
+}
+/* API calls table */
+.ca-calls {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.ca-call-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: .72rem; font-family: var(--mono);
+}
+.ca-call-row:last-child { border-bottom: none; }
+.ca-call-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--border2); flex-shrink: 0;
+}
+.ca-call-row--write .ca-call-dot { background: var(--red); }
+.ca-call-row--read  .ca-call-dot { background: var(--cyan); }
+.ca-call-ns   { color: var(--dim); }
+.ca-call-leaf { color: var(--cyan); }
+.ca-call-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ca-call-cnt  { color: var(--dim); font-size: .65rem; flex-shrink: 0; }
+/* Timeline */
+.tl-list { position: relative; }
+.tl-list::before {
+  content: ''; position: absolute;
+  left: 7px; top: 6px; bottom: 6px;
+  width: 1px; background: var(--border);
+}
+.tl-entry { display: flex; gap: 16px; margin-bottom: 18px; position: relative; }
+.tl-dot {
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--cyan);
+  flex-shrink: 0; margin-top: 2px; position: relative; z-index: 1;
+}
+.tl-body { flex: 1; min-width: 0; }
+.tl-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 3px; }
+.tl-nsid { font-family: var(--mono); font-size: .78rem; }
+.tl-nsid .ns  { color: var(--dim); }
+.tl-nsid .leaf { color: var(--cyan); font-weight: 600; }
+.tl-time { font-size: .68rem; color: var(--dim); font-family: var(--mono); margin-left: auto; white-space: nowrap; }
+.tl-preview {
+  font-size: .75rem; color: var(--muted); line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  margin-bottom: 3px;
+}
+.tl-actions { display: flex; gap: 10px; }
+.tl-link { font-size: .65rem; font-family: var(--mono); color: var(--dim); text-decoration: none; }
+.tl-link:hover { color: var(--cyan); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:28px; padding-bottom:60px;">
+
+  <a class="ca-back" href="/connected-apps">
+    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2.5"
+         stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    connected apps
+  </a>
+
+  <div class="ca-header">
+    <img class="ca-favicon"
+         src="https://www.google.com/s2/favicons?domain={{ display }}&sz=32"
+         alt="" loading="lazy" onerror="this.style.display='none'">
+    <a class="ca-title" href="{{ app.client_url or ('https://' + app.domain) }}" target="_blank" rel="noopener"
+       style="text-decoration:none; color:inherit; cursor:pointer;">
+      {{ display }}
+      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+           style="opacity:.4; vertical-align:middle; margin-left:2px;">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+      </svg>
+    </a>
+  </div>
+  <div class="ca-meta">
+    first seen {{ app.first_seen | timestamp }}
+    &nbsp;·&nbsp;
+    last active {{ app.last_seen | timestamp }}
+    &nbsp;·&nbsp;
+    {{ app.total_calls }} call{{ 's' if app.total_calls != 1 }}
+  </div>
+
+  <!-- API calls -->
+  <div class="ca-section-title">API calls</div>
+  <div class="ca-calls">
+    {% for n in app.nsids %}
+    {% set parts = n.nsid.rsplit('.', 1) %}
+    {% set is_write = n.nsid.startswith('com.atproto.repo') or 'create' in n.nsid.lower() or 'delete' in n.nsid.lower() or 'update' in n.nsid.lower() or 'put' in n.nsid.lower() %}
+    <div class="ca-call-row {% if is_write %}ca-call-row--write{% else %}ca-call-row--read{% endif %}">
+      <div class="ca-call-dot"></div>
+      <div class="ca-call-name" title="{{ n.nsid }}">
+        <span class="ca-call-ns">{{ parts[0] if parts|length > 1 else '' }}.</span><span class="ca-call-leaf">{{ parts[1] if parts|length > 1 else n.nsid }}</span>
+      </div>
+      <div class="ca-call-cnt">×{{ n.calls }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if timeline %}
+  <!-- Record timeline -->
+  <div class="ca-section-title">
+    records written
+    <span style="color:var(--cyan); font-size:.65rem; margin-left:4px;">{{ timeline|length }}</span>
+  </div>
+  <div class="tl-list">
+    {% for e in timeline %}
+    <div class="tl-entry">
+      <div class="tl-dot"></div>
+      <div class="tl-body">
+        <div class="tl-top">
+          <span class="tl-nsid">
+            <span class="ns">{{ e.ns }}</span><span class="leaf">{{ e.leaf }}</span>
+          </span>
+          {% if e.time_str %}<span class="tl-time">{{ e.time_str }}</span>{% endif %}
+        </div>
+        {% if e.preview %}
+        <div class="tl-preview">{{ e.preview }}</div>
+        {% endif %}
+        <div class="tl-actions">
+          <a class="tl-link" href="/repo-browser/{{ e.nsid }}">browse collection →</a>
+          <a class="tl-link"
+             href="https://atproto-browser.vercel.app/at://{{ did }}/{{ e.nsid }}/{{ e.rkey }}"
+             target="_blank" rel="noopener">at:// ↗</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% elif record_nsids %}
+  <div class="ca-section-title">record collections</div>
+  {% for nsid in record_nsids %}
+  {% set parts = nsid.rsplit('.', 1) %}
+  <div style="font-size:.78rem; font-family:var(--mono); margin-bottom:6px;">
+    <span style="color:var(--dim);">{{ parts[0] if parts|length > 1 else '' }}.</span><span style="color:var(--cyan);">{{ parts[1] if parts|length > 1 else nsid }}</span>
+    <a href="/repo-browser/{{ nsid }}" style="color:var(--dim);text-decoration:none;margin-left:8px;font-size:.65rem;cursor:pointer;"
+       onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color='var(--dim)'">browse →</a>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+</div>
+{% endblock %}

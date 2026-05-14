@@ -522,6 +522,27 @@ class Database:
 			case _:
 				raise RuntimeError("unexpected query result")
 
+	def change_account_password(self, did: str, old_password: str, new_password: str) -> None:
+		"""Verify old password then store new hash. Raises ValueError on bad old password."""
+		row = self.con.execute("SELECT pw_hash FROM user WHERE did=?", (did,)).fetchone()
+		if row is None:
+			raise KeyError("account not found")
+		self._verify_password(row[0], old_password)
+		new_hash = self._hash_password(new_password)
+		self.con.execute("UPDATE user SET pw_hash=? WHERE did=?", (new_hash, did))
+
+	def get_birthdate(self, did: str) -> str:
+		"""Return birthdate as YYYY-MM-DD string, or '' if not set."""
+		row = self.con.execute("SELECT birthdate FROM user WHERE did=?", (did,)).fetchone()
+		if not row or not row[0]:
+			return ""
+		return row[0][:10]  # trim ISO datetime to YYYY-MM-DD
+
+	def set_birthdate(self, did: str, dob: str) -> None:
+		"""Store birthdate. dob must be YYYY-MM-DD."""
+		iso = dob + "T00:00:00.000Z"
+		self.con.execute("UPDATE user SET birthdate=? WHERE did=?", (iso, did))
+
 	def did_by_handle(self, handle: str) -> Optional[str]:
 		row = self.con.execute(
 			"SELECT did FROM user WHERE handle=?", (handle,)

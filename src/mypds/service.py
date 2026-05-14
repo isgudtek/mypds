@@ -56,6 +56,45 @@ PROXY_OVERRIDE_PATHS = [
 ]
 
 
+_DEFENSE_PASS = frozenset(["/login", "/logout", "/settings", "/favicon.ico"])
+_DEFENSE_PASS_PREFIXES = ("/xrpc/", "/oauth/", "/.well-known/", "/static/", "/media/")
+
+_DEFENSE_HTML = """\
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mypds</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#333;font-family:monospace;
+  display:flex;align-items:center;justify-content:center;min-height:100vh;}
+pre{font-size:clamp(7px,1.5vw,13px);line-height:1.2;color:#1a1a1a;user-select:none;}
+</style></head><body>
+<pre>
+ _ __ ___  _   _ _ __   __| |___
+| '_ ` _ \\| | | | '_ \\ / _` / __|
+| | | | | | |_| | |_) | (_| \\__ \\
+|_| |_| |_|\\__, | .__/ \\__,_|___/
+           |___/|_|
+</pre>
+</body></html>"""
+
+
+@web.middleware
+async def defense_mode_middleware(request: web.Request, handler):
+	"""When defense mode is enabled, serve a blank figlet page for all web UI paths."""
+	path = request.path
+	# Always pass through: ATProto, OAuth, static, auth pages, settings
+	if path in _DEFENSE_PASS or any(path.startswith(p) for p in _DEFENSE_PASS_PREFIXES):
+		return await handler(request)
+	try:
+		ws = request.app[MILLIPDS_WEB_STORE]
+		if ws.get_node_setting("defense_mode") == "1":
+			return web.Response(text=_DEFENSE_HTML, content_type="text/html", status=200)
+	except KeyError:
+		pass
+	return await handler(request)
+
+
 @web.middleware
 async def cors_error_middleware(request: web.Request, handler):
 	"""Ensure CORS headers are present even on HTTP error responses."""
@@ -708,7 +747,7 @@ def construct_app(
 	def _timestamp_filter(ts: int) -> str:
 		try:
 			dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
-			return dt.strftime('%Y-%m-%d')
+			return dt.strftime('%Y-%m-%d %H:%M')
 		except Exception:
 			return str(ts)
 
@@ -716,7 +755,7 @@ def construct_app(
 	jinja_env.filters['timestamp'] = _timestamp_filter
 	jinja_env.filters['tojson'] = lambda v: __import__('json').dumps(v, ensure_ascii=False)
 
-	app = web.Application(middlewares=[cors_error_middleware, cors, atproto_service_proxy_middleware])
+	app = web.Application(middlewares=[cors_error_middleware, cors, defense_mode_middleware, atproto_service_proxy_middleware])
 	app[MILLIPDS_DB] = db
 	app[MILLIPDS_AIOHTTP_CLIENT] = client
 	app[MILLIPDS_FIREHOSE_QUEUES] = set()

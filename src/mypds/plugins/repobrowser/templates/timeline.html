@@ -1,0 +1,151 @@
+{% extends "node_base.html" %}
+{% block title %}timeline · repo browser{% endblock %}
+
+{% block head %}
+<style>
+.rb-back {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .78rem; color: var(--dim); font-family: var(--mono);
+  text-decoration: none; margin-bottom: 20px; cursor: pointer;
+}
+.rb-back:hover { color: var(--text); }
+.tl-header {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 28px;
+}
+.tl-header h1 { font-size: 1.2rem; font-weight: 700; margin: 0; }
+.tl-filter-chip {
+  font-size: .72rem; font-family: var(--mono);
+  background: var(--surface2); color: var(--cyan);
+  padding: 2px 8px; border-radius: 20px;
+  display: flex; align-items: center; gap: 5px;
+}
+.tl-filter-chip a { color: var(--dim); text-decoration: none; font-size: .65rem; }
+.tl-filter-chip a:hover { color: var(--red); }
+.tl-count { color: var(--dim); font-size: .8rem; margin-left: auto; }
+.tl-list {
+  position: relative;
+}
+.tl-list::before {
+  content: '';
+  position: absolute;
+  left: 7px; top: 6px; bottom: 6px;
+  width: 1px; background: var(--border);
+}
+.tl-entry {
+  display: flex; gap: 16px;
+  margin-bottom: 20px;
+  position: relative;
+}
+.tl-dot {
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--border2);
+  flex-shrink: 0; margin-top: 3px; position: relative; z-index: 1;
+}
+.tl-entry--write .tl-dot { border-color: var(--red); background: color-mix(in srgb, var(--red) 15%, var(--surface)); }
+.tl-entry--read  .tl-dot { border-color: var(--cyan); background: color-mix(in srgb, var(--cyan) 15%, var(--surface)); }
+.tl-body { flex: 1; min-width: 0; }
+.tl-meta {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.tl-nsid {
+  font-family: var(--mono); font-size: .78rem;
+}
+.tl-nsid .ns  { color: var(--dim); }
+.tl-nsid .leaf { color: var(--cyan); font-weight: 600; }
+.tl-domain {
+  font-size: .68rem; font-family: var(--mono);
+  color: var(--dim); background: var(--surface2);
+  padding: 1px 6px; border-radius: 10px;
+  white-space: nowrap; text-decoration: none;
+  cursor: pointer;
+}
+.tl-domain:hover { color: var(--text); }
+.tl-time {
+  font-size: .68rem; color: var(--dim); font-family: var(--mono);
+  margin-left: auto; white-space: nowrap;
+}
+.tl-preview {
+  font-size: .75rem; color: var(--muted);
+  line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  margin-bottom: 4px;
+}
+.tl-actions {
+  display: flex; gap: 10px;
+}
+.tl-link {
+  font-size: .65rem; font-family: var(--mono); color: var(--dim);
+  text-decoration: none;
+}
+.tl-link:hover { color: var(--cyan); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:28px; padding-bottom:60px;">
+
+  <a class="rb-back" href="/connected-apps">
+    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2.5"
+         stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    connected apps
+  </a>
+
+  <div class="tl-header">
+    <h1>Timeline</h1>
+    {% if domain_filter %}
+    <div class="tl-filter-chip">
+      {{ domain_filter }}
+      <a href="/repo-browser/timeline" title="clear filter">✕</a>
+    </div>
+    {% endif %}
+    <span class="tl-count">{{ entries|length }} record{{ 's' if entries|length != 1 }}</span>
+  </div>
+
+  {% if not entries %}
+  <div class="empty" style="margin-top:40px;">No records found.</div>
+  {% else %}
+  <div class="tl-list">
+    {% for e in entries %}
+    <div class="tl-entry">
+      <div class="tl-dot"></div>
+      <div class="tl-body">
+        <div class="tl-meta">
+          <span class="tl-nsid">
+            <span class="ns">{{ e.ns }}</span><span class="leaf">{{ e.leaf }}</span>
+          </span>
+          {% if e.domain %}
+          <a class="tl-domain"
+             href="/repo-browser/timeline?domain={{ e.domain }}"
+             title="filter to {{ e.domain }}">{{ e.domain }}</a>
+          {% endif %}
+          {% if e.time_str %}
+          <span class="tl-time">{{ e.time_str }}</span>
+          {% endif %}
+        </div>
+        {% if e.preview %}
+        <div class="tl-preview">{{ e.preview }}</div>
+        {% endif %}
+        <div class="tl-actions">
+          <a class="tl-link" href="/repo-browser/{{ e.nsid }}">browse collection →</a>
+          <a class="tl-link"
+             href="https://atproto-browser.vercel.app/at://{{ did }}/{{ e.nsid }}/{{ e.rkey }}"
+             target="_blank" rel="noopener">at:// ↗</a>
+          {% if e.client_url %}
+          <a class="tl-link" href="{{ e.client_url }}" target="_blank" rel="noopener">open app ↗</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

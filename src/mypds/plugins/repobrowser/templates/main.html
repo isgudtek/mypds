@@ -1,0 +1,105 @@
+{% extends "node_base.html" %}
+{% block title %}repo browser{% endblock %}
+
+{% block head %}
+<style>
+.rb-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+}
+.rb-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color .15s;
+  cursor: pointer;
+}
+.rb-row:hover { border-color: var(--border2); }
+.rb-row__nsid {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: .78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rb-row__ns  { color: var(--dim); }
+.rb-row__leaf { color: var(--cyan); font-weight: 700; }
+.rb-row__count {
+  background: var(--surface2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: .68rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.rb-row__sources {
+  font-size: .72rem;
+  color: var(--dim);
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rb-row__arrow {
+  color: var(--border2);
+  flex-shrink: 0;
+  font-size: .9rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:60px;">
+  <div class="flex items-center gap-8" style="margin-bottom:4px;">
+    <h1 style="font-size:1.2rem; font-weight:700;">Repo Browser</h1>
+    <span class="text-dim mono" style="margin-left:auto; font-size:.8rem;">
+      {{ collections|length }} collection{{ 's' if collections|length != 1 }}
+    </span>
+  </div>
+  <p style="font-size:.8rem; color:var(--dim); margin-bottom:0;">
+    ATProto records written by connected apps into your local repo. Excludes bsky.
+  </p>
+
+  {% if not collections %}
+  <div class="empty" style="margin-top:48px;">
+    <div class="empty__icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3"/>
+        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+      </svg>
+    </div>
+    No non-bsky records yet. Log into an ATProto app and it will write records here.
+  </div>
+  {% else %}
+  <div class="rb-grid">
+    {% for c in collections %}
+    <a class="rb-row" href="/repo-browser/{{ c.nsid }}">
+      <div class="rb-row__nsid" title="{{ c.nsid }}">
+        <span class="rb-row__ns">{{ c.ns }}</span><span class="rb-row__leaf">{{ c.leaf }}</span>
+      </div>
+      <span class="rb-row__count">{{ c.count }} record{{ 's' if c.count != 1 }}</span>
+      {% if c.sources %}
+      <span class="rb-row__sources">
+        {{ c.sources | map(attribute='domain') | join(', ') }}
+      </span>
+      {% endif %}
+      <span class="rb-row__arrow">›</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

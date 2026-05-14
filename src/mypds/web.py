@@ -87,6 +87,7 @@ def render(request: web.Request, template: str, ctx: dict = {}, status: int = 20
 		"nickname": _ns.get("nickname", ""),
 		"pfp_url": _ns.get("pfp_url", ""),
 		"accent_color": _ns.get("accent_color", ""),
+		"defense_mode": _ns.get("defense_mode", "0"),
 	}
 	try:
 		plugin_names = request.app[MYPDS_PLUGINS]
@@ -1451,7 +1452,8 @@ async def settings_page(request: web.Request):
 	session = get_session(request)
 	if not session:
 		raise web.HTTPFound("/login")
-	return render(request, "node_settings.html", {"saved": False})
+	dob = get_db(request).get_birthdate(session["did"])
+	return render(request, "node_settings.html", {"saved": False, "pw_error": None, "pw_saved": False, "dob": dob})
 
 
 @web_routes.post("/settings")
@@ -1461,15 +1463,49 @@ async def settings_post(request: web.Request):
 		raise web.HTTPFound("/login")
 	data = await request.post()
 	ws = get_web_store(request)
+	import re as _re_local
+
+	# ── Identity / appearance ──────────────────────────────────────────────
 	nickname = data.get("nickname", "").strip()[:64]
 	pfp_url = data.get("pfp_url", "").strip()[:512]
 	accent_color = data.get("accent_color", "").strip()
 	ws.set_node_setting("nickname", nickname)
 	ws.set_node_setting("pfp_url", pfp_url)
-	# Only store valid hex colors
-	import re as _re_local
 	if accent_color and _re_local.match(r'^#[0-9a-fA-F]{6}$', accent_color):
 		ws.set_node_setting("accent_color", accent_color)
 	elif not accent_color:
 		ws.set_node_setting("accent_color", "")
-	return render(request, "node_settings.html", {"saved": True})
+
+	# ── Defense mode ──────────────────────────────────────────────────────
+	defense_mode = "1" if data.get("defense_mode") == "1" else "0"
+	ws.set_node_setting("defense_mode", defense_mode)
+
+	# ── Date of birth (stored in ATProto user.birthdate) ──────────────────
+	dob = data.get("dob", "").strip()
+	if dob and _re_local.match(r'^\d{4}-\d{2}-\d{2}$', dob):
+		get_db(request).set_birthdate(session["did"], dob)
+
+	# ── Password change ────────────────────────────────────────────────────
+	old_pw = data.get("old_password", "").strip()
+	new_pw = data.get("new_password", "").strip()
+	confirm_pw = data.get("confirm_password", "").strip()
+	pw_error = None
+	pw_saved = False
+	if old_pw or new_pw or confirm_pw:
+		if not old_pw:
+			pw_error = "Enter your current password."
+		elif not new_pw:
+			pw_error = "Enter a new password."
+		elif len(new_pw) < 8:
+			pw_error = "New password must be at least 8 characters."
+		elif new_pw != confirm_pw:
+			pw_error = "New passwords don't match."
+		else:
+			try:
+				get_db(request).change_account_password(session["did"], old_pw, new_pw)
+				pw_saved = True
+			except ValueError:
+				pw_error = "Current password is incorrect."
+
+	current_dob = get_db(request).get_birthdate(session["did"])
+	return render(request, "node_settings.html", {"saved": True, "pw_error": pw_error, "pw_saved": pw_saved, "dob": current_dob})

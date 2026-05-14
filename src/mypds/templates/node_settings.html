@@ -16,7 +16,17 @@
          style="vertical-align:middle; margin-right:6px;">
       <polyline points="20 6 9 17 4 12"/>
     </svg>
-    Settings saved.
+    Settings saved.{% if pw_saved %} Password updated.{% endif %}
+  </div>
+  {% endif %}
+  {% if pw_error %}
+  <div class="alert alert--error" style="margin-bottom:20px;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         style="vertical-align:middle; margin-right:6px;">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    {{ pw_error }}
   </div>
   {% endif %}
 
@@ -94,6 +104,69 @@
         <span id="accent-hex" class="mono text-dim" style="font-size:.75rem;">
           {{ node_settings.accent_color or '' }}
         </span>
+      </div>
+    </div>
+
+    <!-- Defense mode -->
+    <div class="panel" style="margin-bottom:16px; border-color: {% if node_settings.defense_mode == '1' %}var(--red){% else %}var(--border){% endif %};">
+      <div class="panel__title" style="display:flex; align-items:center; gap:8px;">
+        defense mode
+        {% if node_settings.defense_mode == '1' %}
+        <span style="font-size:.65rem; background:var(--red); color:#fff; padding:1px 6px; border-radius:3px; font-family:var(--mono);">ON</span>
+        {% endif %}
+      </div>
+      <div style="margin-top:8px; margin-bottom:14px; font-size:.78rem; color:var(--muted); line-height:1.5;">
+        When enabled, the web UI is hidden — only a blank page is served at <code>/</code>.
+        ATProto XRPC endpoints remain fully active. Login and settings stay accessible.
+        <br>Use this to run as a protocol-only node while keeping the UI off.
+      </div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.82rem;">
+          <input type="checkbox" name="defense_mode" value="1"
+                 {% if node_settings.defense_mode == '1' %}checked{% endif %}
+                 style="width:16px; height:16px; accent-color:var(--red); cursor:pointer;">
+          hide web UI (protocol-only mode)
+        </label>
+      </div>
+    </div>
+
+    <!-- Date of birth -->
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="panel__title">date of birth</div>
+      <div style="margin-top:8px; margin-bottom:12px; font-size:.78rem; color:var(--muted);">
+        Required by some platforms (e.g. Bluesky) for age verification. Stored locally only.
+      </div>
+      <div class="form-group" style="margin-top:0;">
+        <label for="dob">date of birth</label>
+        <input id="dob" class="input" type="date" name="dob"
+               value="{{ dob }}"
+               style="max-width:200px; cursor:pointer;">
+        <div class="mono text-dim" style="font-size:.66rem; margin-top:5px;">
+          YYYY-MM-DD · never shared publicly
+        </div>
+      </div>
+    </div>
+
+    <!-- Change password -->
+    <div class="panel" style="margin-bottom:24px;">
+      <div class="panel__title">change password</div>
+      <div style="margin-top:8px; margin-bottom:12px; font-size:.78rem; color:var(--muted);">
+        Leave blank to keep your current password.
+      </div>
+      <div class="form-group" style="margin-top:0;">
+        <label for="old_password">current password</label>
+        <input id="old_password" class="input" type="password" name="old_password"
+               autocomplete="current-password" placeholder="enter current password">
+      </div>
+      <div class="form-group">
+        <label for="new_password">new password</label>
+        <input id="new_password" class="input" type="password" name="new_password"
+               autocomplete="new-password" placeholder="at least 8 characters">
+      </div>
+      <div class="form-group">
+        <label for="confirm_password">confirm new password</label>
+        <input id="confirm_password" class="input" type="password" name="confirm_password"
+               autocomplete="new-password" placeholder="repeat new password">
       </div>
     </div>
 
