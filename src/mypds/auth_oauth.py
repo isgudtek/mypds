@@ -262,7 +262,7 @@ async def oauth_authorize_handle_login(request: web.Request):
 	db = get_db(request)
 	cfg = db.config
 
-	request_uri = data.get("request_uri")
+	request_uri = data.get("request_uri") or request.query.get("request_uri")
 	handle_or_did = data.get("handle")
 	password = data.get("password")
 

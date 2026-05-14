@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Authorize{% endblock %}
 {% block content %}
-		<h3>put yer creds in the box.</h3>
-		<p>Logging in to: <strong>{{ client_id }}</strong></p>
-		<form action="" method="POST">
+		<h3>Login to authorize</h3>
+		<p>Client: <strong>{{ client_id }}</strong></p>
+		<p>Scope: <strong>{{ scope }}</strong></p>
+		<form action="/oauth/authorize" method="POST">
 			<input type="hidden" name="request_uri" value="{{ request_uri }}">
-			<label>handle: <input type="text" name="handle" placeholder="mypds.mycrab.space"></label>
+			<label>handle/DID: <input type="text" name="handle" placeholder="mypds.mycrab.space" autofocus></label>
 			<label>password: <input type="password" name="password" placeholder="password"></label>
-			<input type="submit" value="sign in">
+			<input type="submit" value="Sign in">
 		</form>
 {% endblock %}
