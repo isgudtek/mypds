@@ -10,7 +10,6 @@ from cryptography.hazmat.primitives import serialization
 from .app_util import *
 from . import util
 from . import crypto
-from . import cbrrr
 
 logger = logging.getLogger(__name__)
 
