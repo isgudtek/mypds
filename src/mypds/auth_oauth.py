@@ -265,6 +265,7 @@ async def oauth_authorize_handle_login(request: web.Request):
 	request_uri = data.get("request_uri") or request.query.get("request_uri")
 	handle_or_did = data.get("handle")
 	password = data.get("password")
+	birthdate = data.get("birthdate")
 
 	if not all([request_uri, handle_or_did, password]):
 		raise web.HTTPBadRequest(text="missing required fields")
@@ -288,6 +289,13 @@ async def oauth_authorize_handle_login(request: web.Request):
 		did, _ = db.verify_account_login(handle_or_did, password)
 	except (KeyError, ValueError):
 		raise web.HTTPBadRequest(text="invalid credentials")
+
+	# Update birthdate if provided
+	if birthdate:
+		db.con.execute(
+			"UPDATE user SET birthdate=? WHERE did=?",
+			(birthdate, did)
+		)
 
 	# Generate authorization code
 	auth_code = generate_authorization_code()
