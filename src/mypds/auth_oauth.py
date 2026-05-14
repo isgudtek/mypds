@@ -318,8 +318,14 @@ async def oauth_authorize_handle_login(request: web.Request):
 
 	# Redirect back to client with code
 	redirect_url = f"{redirect_uri}?code={auth_code}&iss={cfg['auth_pfx']}"
-	if data.get("state"):
-		redirect_url += f"&state={data['state']}"
+
+	# Retrieve state from PAR request if stored
+	stored_state = None
+	if hasattr(request.app, "par_state") and request_uri in request.app.get("par_state", {}):
+		stored_state = request.app["par_state"].pop(request_uri)
+
+	if stored_state:
+		redirect_url += f"&state={stored_state}"
 
 	return web.Response(
 		status=302,
@@ -426,6 +432,10 @@ async def oauth_pushed_authorization_request(request: web.Request):
 	request_uri = generate_request_uri()
 	expires_at = int(time.time()) + 600  # 10 minutes
 
+	# Store state in request context if provided (will be retrieved later)
+	# Note: state is typically in PAR data but handled separately
+	state = data.get("state", "")
+
 	# Store PAR request
 	db.con.execute(
 		"""
@@ -445,6 +455,11 @@ async def oauth_pushed_authorization_request(request: web.Request):
 			expires_at,
 		),
 	)
+
+	# Store state temporarily (using a simple in-memory approach for now)
+	if state:
+		request.app["par_state"] = request.app.get("par_state", {})
+		request.app["par_state"][request_uri] = state
 
 	return web.json_response(
 		{
