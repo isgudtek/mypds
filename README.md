@@ -117,4 +117,3 @@ Any ATProto client can read these. Migrate your DID to another PDS and your data
 MIT — same as upstream millipds.
 
 Original millipds by [David Buchanan](https://github.com/DavidBuchanan314).
-Personal Home Node additions by [isgudtek](https://github.com/isgudtek).
