@@ -34,6 +34,7 @@ class MillipdsConfigPartial(TypedDict):
 
 	db_version: int
 	jwt_access_secret: str
+	server_as_privkey: str
 	pds_pfx: Optional[str]
 	pds_did: Optional[str]
 	auth_pfx: Optional[str]
@@ -46,6 +47,7 @@ class MillipdsConfig(TypedDict):
 
 	db_version: int
 	jwt_access_secret: str
+	server_as_privkey: str
 	pds_pfx: str
 	pds_did: str
 	auth_pfx: str
@@ -95,7 +97,10 @@ class Database:
 		).get
 
 		if config_exists:
-			if self.config["db_version"] != static_config.MILLIPDS_DB_VERSION:
+			db_version = self.con.execute(
+				"SELECT db_version FROM config"
+			).get
+			if db_version != static_config.MILLIPDS_DB_VERSION:
 				raise Exception(
 					"unrecognised db version (TODO: db migrations?!)"
 				)
@@ -134,19 +139,31 @@ class Database:
 				auth_pfx TEXT,
 				bsky_appview_pfx TEXT,
 				bsky_appview_did TEXT,
-				jwt_access_secret TEXT NOT NULL
+				jwt_access_secret TEXT NOT NULL,
+				server_as_privkey TEXT NOT NULL
 			) STRICT
 			"""
 		)
+
+		# Generate P-256 server AS (Authorization Server) signing key
+		from cryptography.hazmat.primitives.asymmetric import ec
+		from cryptography.hazmat.primitives import serialization
+		privkey = ec.generate_private_key(ec.SECP256R1())
+		privkey_pem = privkey.private_bytes(
+			encoding=serialization.Encoding.PEM,
+			format=serialization.PrivateFormat.PKCS8,
+			encryption_algorithm=serialization.NoEncryption()
+		).decode('utf-8')
 
 		self.con.execute(
 			"""
 			INSERT INTO config(
 				db_version,
-				jwt_access_secret
-			) VALUES (?, ?)
+				jwt_access_secret,
+				server_as_privkey
+			) VALUES (?, ?, ?)
 			""",
-			(static_config.MILLIPDS_DB_VERSION, secrets.token_hex()),
+			(static_config.MILLIPDS_DB_VERSION, secrets.token_hex(), privkey_pem),
 		)
 
 		# TODO: head and rev are redundant, technically (rev contained within commit_bytes)
@@ -287,6 +304,39 @@ class Database:
 			"""
 		)
 
+		# OAuth 2.0 Pushed Authorization Request storage (RFC 9126)
+		self.con.execute(
+			"""
+			CREATE TABLE oauth_par_request(
+				request_uri TEXT PRIMARY KEY NOT NULL,
+				client_id TEXT NOT NULL,
+				redirect_uri TEXT NOT NULL,
+				scope TEXT NOT NULL,
+				code_challenge TEXT NOT NULL,
+				code_challenge_method TEXT NOT NULL DEFAULT 'S256',
+				dpop_jwk BLOB NOT NULL,
+				expires_at INTEGER NOT NULL
+			) STRICT, WITHOUT ROWID
+			"""
+		)
+
+		# OAuth 2.0 Authorization Code storage
+		self.con.execute(
+			"""
+			CREATE TABLE oauth_auth_code(
+				code TEXT PRIMARY KEY NOT NULL,
+				did TEXT NOT NULL,
+				scope TEXT NOT NULL,
+				dpop_jkt TEXT NOT NULL,
+				redirect_uri TEXT NOT NULL,
+				client_id TEXT NOT NULL,
+				pkce_challenge TEXT NOT NULL,
+				expires_at INTEGER NOT NULL,
+				used INTEGER NOT NULL DEFAULT 0
+			) STRICT, WITHOUT ROWID
+			"""
+		)
+
 	def update_config(
 		self,
 		pds_pfx: Optional[str] = None,
@@ -326,6 +376,7 @@ class Database:
 			"bsky_appview_pfx",
 			"bsky_appview_did",
 			"jwt_access_secret",
+			"server_as_privkey",
 		)
 
 		match self.con.execute(

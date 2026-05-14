@@ -1,15 +1,70 @@
 import logging
+import hashlib
+import base64
+import secrets
+import time
+import uuid
+from typing import Dict, Any
 
 import jwt
 import cbrrr
 import json
 
 from aiohttp import web
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
 
 from . import database
 from .app_util import *
 
 logger = logging.getLogger(__name__)
+
+
+def jwk_thumbprint(jwk_dict: Dict[str, Any]) -> str:
+	"""Compute JWK thumbprint per RFC 7638"""
+	required = {k: jwk_dict[k] for k in sorted(["crv", "kty", "x", "y"]) if k in jwk_dict}
+	canon = json.dumps(required, separators=(',', ':'), sort_keys=True)
+	digest = hashlib.sha256(canon.encode()).digest()
+	return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
+
+
+def generate_authorization_code() -> str:
+	return secrets.token_urlsafe(32)
+
+
+def generate_request_uri() -> str:
+	return f"urn:ietf:params:oauth:request_uri:{uuid.uuid4()}"
+
+
+def pkce_verify(code_verifier: str, stored_challenge: str) -> bool:
+	"""Verify PKCE code_verifier against stored challenge (S256)"""
+	computed = base64.urlsafe_b64encode(
+		hashlib.sha256(code_verifier.encode()).digest()
+	).rstrip(b'=').decode()
+	return computed == stored_challenge
+
+
+def sign_oauth_token(
+	privkey_pem: str,
+	iss: str,
+	aud: str,
+	sub: str,
+	scope: str,
+	cnf_jkt: str,
+) -> str:
+	"""Sign an OAuth access token JWT with ES256"""
+	privkey = serialization.load_pem_private_key(privkey_pem.encode(), password=None)
+	payload = {
+		"iss": iss,
+		"aud": aud,
+		"sub": sub,
+		"scope": scope,
+		"cnf": {"jkt": cnf_jkt},
+		"iat": int(time.time()),
+		"exp": int(time.time()) + 7200,  # 2 hours
+		"jti": str(uuid.uuid4()),
+	}
+	return jwt.encode(payload, privkey, algorithm="ES256")
 
 
 # this is a bit of a hack to annotate routes as AS-only, to be checked via middleware
@@ -133,36 +188,142 @@ async def oauth_authorization_server(request: web.Request):
 	)
 
 
+@as_routes.get("/oauth/jwks")
+async def oauth_jwks(request: web.Request):
+	"""Return the OAuth server's public key as JWKS"""
+	cfg = get_db(request).config
+	privkey_pem = cfg["server_as_privkey"]
+	privkey = serialization.load_pem_private_key(privkey_pem.encode(), password=None)
+	pubkey = privkey.public_key()
+
+	# Extract coordinates from the public key
+	numbers = pubkey.public_numbers()
+
+	# Pad x and y to 32 bytes (256 bits for P-256)
+	x_bytes = numbers.x.to_bytes(32, byteorder='big')
+	y_bytes = numbers.y.to_bytes(32, byteorder='big')
+	x_b64 = base64.urlsafe_b64encode(x_bytes).rstrip(b'=').decode()
+	y_b64 = base64.urlsafe_b64encode(y_bytes).rstrip(b'=').decode()
+
+	jwk = {
+		"kty": "EC",
+		"crv": "P-256",
+		"x": x_b64,
+		"y": y_b64,
+		"alg": "ES256",
+		"use": "sig",
+		"kid": jwk_thumbprint({"kty": "EC", "crv": "P-256", "x": x_b64, "y": y_b64}),
+	}
+
+	return web.json_response({"keys": [jwk]})
+
+
 # this is where a client will redirect to during the auth flow.
 # they'll see a webpage asking them to login
 @as_routes.get("/oauth/authorize")
 async def oauth_authorize(request: web.Request):
-	# TODO: extract request_uri
-	html = get_jinja_env(request).get_template("authn.html").render()
-	return web.Response(
-		text=html,  # this includes a login form that POSTs to /oauth/authorize (i.e. same endpoint)
-		content_type="text/html",
-		headers=WEBUI_HEADERS,
-	)
+	request_uri = request.query.get("request_uri")
+	if not request_uri:
+		raise web.HTTPBadRequest(text="missing request_uri")
 
+	db = get_db(request)
 
-# after login, assuming the creds were good, the user will be prompted to
-# authorize the client application to access certain scopes
-@as_routes.post("/oauth/authorize")
-async def oauth_authorize_handle_login(request: web.Request):
-	# TODO: actually handle login
-	html = (
-		get_jinja_env(request)
-		.get_template("authz.html")
-		.render(
-			client_id="http://localhost/foobar.json",
-			form_action="/oauth/foobar",
-		)
+	# Look up PAR request
+	par_row = db.con.execute(
+		"SELECT client_id, scope, expires_at FROM oauth_par_request WHERE request_uri=?",
+		(request_uri,),
+	).fetchone()
+
+	if not par_row:
+		raise web.HTTPBadRequest(text="invalid request_uri")
+
+	client_id, scope, expires_at = par_row
+
+	if expires_at < int(time.time()):
+		raise web.HTTPBadRequest(text="request_uri expired")
+
+	# Render login form with embedded PAR info
+	html = get_jinja_env(request).get_template("authn.html").render(
+		request_uri=request_uri,
+		client_id=client_id,
+		scope=scope,
 	)
 	return web.Response(
 		text=html,
 		content_type="text/html",
 		headers=WEBUI_HEADERS,
+	)
+
+
+# after login, issue authorization code and redirect back to client
+@as_routes.post("/oauth/authorize")
+async def oauth_authorize_handle_login(request: web.Request):
+	data = await request.post()
+	db = get_db(request)
+	cfg = db.config
+
+	request_uri = data.get("request_uri")
+	handle_or_did = data.get("handle")
+	password = data.get("password")
+
+	if not all([request_uri, handle_or_did, password]):
+		raise web.HTTPBadRequest(text="missing required fields")
+
+	# Look up PAR request
+	par_row = db.con.execute(
+		"SELECT client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk, expires_at FROM oauth_par_request WHERE request_uri=?",
+		(request_uri,),
+	).fetchone()
+
+	if not par_row:
+		raise web.HTTPBadRequest(text="invalid request_uri")
+
+	client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk_blob, expires_at = par_row
+
+	if expires_at < int(time.time()):
+		raise web.HTTPBadRequest(text="request_uri expired")
+
+	# Verify credentials
+	try:
+		did, _ = db.verify_account_login(handle_or_did, password)
+	except (KeyError, ValueError):
+		raise web.HTTPBadRequest(text="invalid credentials")
+
+	# Generate authorization code
+	auth_code = generate_authorization_code()
+	code_expires_at = int(time.time()) + 600  # 10 minutes
+
+	# Compute DPoP JKT from stored JWK
+	dpop_jwk = cbrrr.decode_dag_cbor(dpop_jwk_blob)
+	dpop_jkt = jwk_thumbprint(dpop_jwk)
+
+	# Store authorization code
+	db.con.execute(
+		"""
+		INSERT INTO oauth_auth_code(
+			code, did, scope, dpop_jkt, redirect_uri, client_id, pkce_challenge, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		""",
+		(
+			auth_code,
+			did,
+			scope,
+			dpop_jkt,
+			redirect_uri,
+			client_id,
+			code_challenge,
+			code_expires_at,
+		),
+	)
+
+	# Redirect back to client with code
+	redirect_url = f"{redirect_uri}?code={auth_code}&iss={cfg['auth_pfx']}"
+	if data.get("state"):
+		redirect_url += f"&state={data['state']}"
+
+	return web.Response(
+		status=302,
+		headers={"Location": redirect_url},
 	)
 
 
@@ -240,20 +401,134 @@ def dpop_protected(handler):
 @as_routes.post("/oauth/par")
 @dpop_protected
 async def oauth_pushed_authorization_request(request: web.Request):
-	data = (
-		await request.json()
-	)  # TODO: doesn't rfc9126 say it's posted as form data?
-	logging.info(data)
+	db = get_db(request)
+
+	# Handle both JSON and form-encoded POST data
+	content_type = request.headers.get("content-type", "").lower()
+	if "application/json" in content_type:
+		data = await request.json()
+	else:
+		data = await request.post()
 
 	# Verify client_id matches DPoP issuer if iss is present
-	if request["dpop_iss"] and data["client_id"] != request["dpop_iss"]:
+	if request.get("dpop_iss") and data.get("client_id") != request.get("dpop_iss"):
 		raise web.HTTPBadRequest(text="client_id does not match dpop iss")
 
-	# we need to store the request somewhere, and associate it with the URI we return
+	# Verify required fields
+	for field in ["client_id", "redirect_uri", "scope", "code_challenge", "code_challenge_method"]:
+		if field not in data:
+			raise web.HTTPBadRequest(text=f"missing required field: {field}")
+
+	if data["code_challenge_method"] != "S256":
+		raise web.HTTPBadRequest(text="only S256 code_challenge_method is supported")
+
+	# Generate a unique request_uri
+	request_uri = generate_request_uri()
+	expires_at = int(time.time()) + 600  # 10 minutes
+
+	# Store PAR request
+	db.con.execute(
+		"""
+		INSERT INTO oauth_par_request(
+			request_uri, client_id, redirect_uri, scope,
+			code_challenge, code_challenge_method, dpop_jwk, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		""",
+		(
+			request_uri,
+			data["client_id"],
+			data["redirect_uri"],
+			data["scope"],
+			data["code_challenge"],
+			data["code_challenge_method"],
+			request["dpop_jwk"],
+			expires_at,
+		),
+	)
 
 	return web.json_response(
 		{
-			"request_uri": "urn:ietf:params:oauth:request_uri:req-064ed63e9fbf10815fd5f402f4f3e92a",  # XXX hardcoded test
-			"expires_in": 299,
+			"request_uri": request_uri,
+			"expires_in": 600,
+		}
+	)
+
+
+@as_routes.post("/oauth/token")
+@dpop_protected
+async def oauth_token(request: web.Request):
+	"""Exchange authorization code for access token"""
+	data = await request.json()
+	db = get_db(request)
+	cfg = db.config
+
+	# Verify grant_type
+	if data.get("grant_type") != "authorization_code":
+		raise web.HTTPBadRequest(text="only authorization_code grant type is supported")
+
+	# Look up and validate authorization code
+	code = data.get("code")
+	if not code:
+		raise web.HTTPBadRequest(text="missing code")
+
+	auth_code_row = db.con.execute(
+		"SELECT did, scope, dpop_jkt, redirect_uri, client_id, pkce_challenge, used FROM oauth_auth_code WHERE code=?",
+		(code,),
+	).fetchone()
+
+	if not auth_code_row:
+		raise web.HTTPBadRequest(text="invalid code")
+
+	did, scope, dpop_jkt, redirect_uri, client_id, pkce_challenge, used = auth_code_row
+
+	# Check if code was already used
+	if used:
+		raise web.HTTPBadRequest(text="code already used")
+
+	# Verify expiration
+	expires_row = db.con.execute(
+		"SELECT expires_at FROM oauth_auth_code WHERE code=?", (code,)
+	).fetchone()
+	if expires_row and expires_row[0] < int(time.time()):
+		raise web.HTTPBadRequest(text="code expired")
+
+	# Verify redirect_uri matches
+	if data.get("redirect_uri") != redirect_uri:
+		raise web.HTTPBadRequest(text="redirect_uri mismatch")
+
+	# Verify client_id matches
+	if data.get("client_id") != client_id:
+		raise web.HTTPBadRequest(text="client_id mismatch")
+
+	# Verify PKCE
+	code_verifier = data.get("code_verifier")
+	if not code_verifier or not pkce_verify(code_verifier, pkce_challenge):
+		raise web.HTTPBadRequest(text="invalid code_verifier")
+
+	# Verify DPoP JWK thumbprint matches
+	current_dpop_jkt = jwk_thumbprint(request["dpop_jwk"])
+	if current_dpop_jkt != dpop_jkt:
+		raise web.HTTPBadRequest(text="dpop jkt mismatch")
+
+	# Mark code as used
+	db.con.execute("UPDATE oauth_auth_code SET used=1 WHERE code=?", (code,))
+
+	# Sign access token
+	access_token = sign_oauth_token(
+		privkey_pem=cfg["server_as_privkey"],
+		iss=cfg["auth_pfx"],
+		aud=cfg["pds_pfx"],
+		sub=did,
+		scope=scope,
+		cnf_jkt=current_dpop_jkt,
+	)
+
+	return web.json_response(
+		{
+			"access_token": access_token,
+			"token_type": "DPoP",
+			"expires_in": 7200,
+			"scope": scope,
+			"sub": did,
 		}
 	)
