@@ -338,8 +338,10 @@ DPOP_NONCE = "placeholder_nonce_value"  # this needs to get rotated! (does it ma
 
 def dpop_protected(handler):
 	async def dpop_handler(request: web.Request):
+		logger.info(f"DPoP-protected {request.method} {request.path} - headers: {dict(request.headers)}")
 		dpop = request.headers.get("dpop")
 		if dpop is None:
+			logger.error(f"Missing DPoP header on {request.method} {request.path}")
 			raise web.HTTPBadRequest(text="missing dpop")
 
 		# we're not verifying yet, we just want to pull out the jwk from the header
