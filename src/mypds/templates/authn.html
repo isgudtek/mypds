@@ -2,8 +2,10 @@
 {% block title %}Authorize{% endblock %}
 {% block content %}
 		<h3>put yer creds in the box.</h3>
+		<p>Logging in to: <strong>{{ client_id }}</strong></p>
 		<form action="" method="POST">
-			<label>handle: <input type="text" name="handle" value="todo.invalid" placeholder="bob.example.org"></label>
+			<input type="hidden" name="request_uri" value="{{ request_uri }}">
+			<label>handle: <input type="text" name="handle" placeholder="mypds.mycrab.space"></label>
 			<label>password: <input type="password" name="password" placeholder="password"></label>
 			<input type="submit" value="sign in">
 		</form>
