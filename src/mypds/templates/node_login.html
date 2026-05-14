@@ -18,7 +18,7 @@
     <div class="alert alert--error">{{ error }}</div>
     {% endif %}
 
-    <form method="post" action="/login">
+    <form method="post" action="/login{% if next %}?next={{ next }}{% endif %}">
       <div class="form-group">
         <label>Handle or DID</label>
         <input class="form-control" type="text" name="identifier" autocomplete="username"

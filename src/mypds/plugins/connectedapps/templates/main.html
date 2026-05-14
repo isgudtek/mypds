@@ -106,12 +106,23 @@
   {% else %}
   <div class="apps-grid">
     {% for app in connected_apps %}
+    {% set app_url = app.client_url or ('https://' + app.domain) %}
+    {% set display = app.domain.split('api.')[1] if app.domain.startswith('api.') else app.domain %}
     <div class="app-card">
       <div class="app-card__header">
         <img class="app-card__favicon"
-             src="https://www.google.com/s2/favicons?domain={{ app.domain }}&sz=32"
+             src="https://www.google.com/s2/favicons?domain={{ display }}&sz=32"
              alt="" loading="lazy" onerror="this.style.display='none'">
-        <span class="app-card__domain">{{ app.domain }}</span>
+        <a class="app-card__domain" href="{{ app_url }}" target="_blank" rel="noopener"
+           style="text-decoration:none; color:inherit; cursor:pointer;">
+          {{ display }}
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+               stroke-linejoin="round" style="opacity:.4; vertical-align:middle; margin-left:2px;">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </a>
       </div>
       <div class="app-card__meta">
         first seen {{ app.first_seen | timestamp }}

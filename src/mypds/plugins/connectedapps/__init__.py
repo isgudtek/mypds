@@ -13,7 +13,7 @@ routes = web.RouteTableDef()
 async def connected_apps_page(request: web.Request):
     session = get_session(request)
     if not session:
-        raise web.HTTPFound("/login")
+        raise web.HTTPFound("/login?next=/connected-apps")
     ws = get_web_store(request)
     apps = ws.get_app_logins()
     return render(request, "plugin/connectedapps/main.html", {"connected_apps": apps})

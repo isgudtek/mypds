@@ -104,6 +104,7 @@ class Database:
 				raise Exception(
 					"unrecognised db version (TODO: db migrations?!)"
 				)
+			self._apply_migrations()
 		else:
 			with self.con:
 				self._init_tables()
@@ -127,6 +128,16 @@ class Database:
 				else apsw.SQLITE_OPEN_READWRITE | apsw.SQLITE_OPEN_CREATE
 			),
 		)
+
+	def _apply_migrations(self):
+		"""Apply additive schema migrations for existing DBs."""
+		existing_par_cols = {
+			row[1] for row in self.con.execute("PRAGMA table_info(oauth_par_request)").fetchall()
+		}
+		if "response_mode" not in existing_par_cols:
+			self.con.execute(
+				"ALTER TABLE oauth_par_request ADD COLUMN response_mode TEXT NOT NULL DEFAULT 'query'"
+			)
 
 	def _init_tables(self):
 		logger.info("initing tables")
@@ -316,6 +327,7 @@ class Database:
 				code_challenge_method TEXT NOT NULL DEFAULT 'S256',
 				dpop_jwk BLOB NOT NULL,
 				state TEXT,
+				response_mode TEXT NOT NULL DEFAULT 'query',
 				expires_at INTEGER NOT NULL
 			) STRICT, WITHOUT ROWID
 			"""

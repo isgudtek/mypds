@@ -1,14 +1,50 @@
-{% extends "base.html" %}
-{% block title %}Authorize{% endblock %}
-{% block content %}
-		<h3>Login to authorize</h3>
-		<p>Client: <strong>{{ client_id }}</strong></p>
-		<p>Scope: <strong>{{ scope }}</strong></p>
-		<form action="/oauth/authorize" method="POST">
-			<input type="hidden" name="request_uri" value="{{ request_uri }}">
-			<label>handle/DID: <input type="text" name="handle" placeholder="mypds.mycrab.space" autofocus></label>
-			<label>password: <input type="password" name="password" placeholder="password"></label>
-			<label>birthdate (YYYY-MM-DD): <input type="text" name="birthdate" placeholder="1990-01-01"></label>
-			<input type="submit" value="Sign in">
-		</form>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authorize · mypds</title>
+<link rel="stylesheet" href="/static/node.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-box">
+
+    <div class="login-box__logo">mypds<span>.node</span></div>
+    <h1>Authorize</h1>
+    <p style="font-size:.8rem; color:var(--dim); margin-bottom:16px;">
+      <span style="font-family:var(--mono); color:var(--cyan);">{{ client_id }}</span>
+      is requesting access
+    </p>
+
+    {% if scope %}
+    <div style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); padding:8px 12px; margin-bottom:20px; font-size:.75rem; font-family:var(--mono); color:var(--muted);">
+      scope: <span style="color:var(--text);">{{ scope }}</span>
+    </div>
+    {% endif %}
+
+    <form method="post" action="/oauth/authorize">
+      <input type="hidden" name="request_uri" value="{{ request_uri }}">
+      <div class="form-group">
+        <label>Handle or DID</label>
+        <input class="form-control" type="text" name="handle"
+               placeholder="mypds.mycrab.space" autocomplete="username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input class="form-control" type="password" name="password"
+               placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn--primary" type="submit" style="width:100%;justify-content:center;">
+        Sign in &amp; Authorize →
+      </button>
+    </form>
+
+    <div style="margin-top:24px; font-size:.75rem; color:var(--dim); font-family:var(--mono);">
+      <a href="/" style="color:var(--dim);">← back to node</a>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

@@ -158,7 +158,7 @@ source /opt/mypds/.venv/bin/activate
 mypds init "$DOMAIN"
 
 # Optional: if you have a pre-generated DID, set it now:
-# python3 -c "import sqlite3; con=sqlite3.connect('/opt/mypds/mypds.db'); con.execute('UPDATE config SET pds_did=?', ('did:plc:xxx',)); con.commit()"
+# python3 -c "import sqlite3; con=sqlite3.connect('/opt/mypds/data/mypds.sqlite3'); con.execute('UPDATE config SET pds_did=?', ('did:plc:xxx',)); con.commit()"
 ```
 
 The `init` command sets `pds_did = did:web:<DOMAIN>` automatically. The database is now ready.
@@ -182,10 +182,10 @@ Default password is `changeme123` — tell the user to change it after first log
 ### Quick start (foreground / testing)
 ```bash
 source /opt/mypds/.venv/bin/activate
-mypds run --port=3030
+mypds run --listen_host=127.0.0.1 --listen_port=3030
 ```
 
-All config (pds_did, pds_pfx, etc.) is read from the DB created in Step 4. No flags needed.
+All config (pds_did, pds_pfx, etc.) is read from the DB created in Step 4. No flags needed beyond listen address.
 
 ### Production — systemd service
 
@@ -200,7 +200,7 @@ Type=simple
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=/opt/mypds
-ExecStart=/opt/mypds/.venv/bin/mypds run --port=3030
+ExecStart=/opt/mypds/.venv/bin/mypds run --listen_host=127.0.0.1 --listen_port=3030
 
 [Install]
 WantedBy=multi-user.target
@@ -264,6 +264,7 @@ Open `$PDS_URL` in a browser:
 | `/links` | public | `pub.social.linktree` link list |
 | `/files` | owner | Upload files via blob store |
 | `/dropbox` | public | File inbox — anyone can send files |
+| `/connected-apps` | owner | OAuth apps that have authenticated via this PDS |
 | `/settings` | owner | Nickname, profile photo, accent color |
 | `/node-info` | public | DID, ATProto endpoints, stats |
 
@@ -290,6 +291,29 @@ websocat "wss://$DOMAIN/xrpc/com.atproto.sync.subscribeRepos"
 ```bash
 dig TXT "_atproto.$HANDLE" +short
 curl "https://$HANDLE/.well-known/atproto-did"
+```
+
+### Cloudflare tunnel not running / 502 errors
+The PDS process and the Cloudflare tunnel are **two separate processes** — both must be running. If you see 502:
+```bash
+# Check both are up
+ps aux | grep mypds
+ps aux | grep cloudflared
+
+# Restart tunnel if dead (adjust path/tunnel-id to match your setup)
+cd ~/.cloudflared && cloudflared tunnel --protocol http2 --config mypds.yml run <TUNNEL_ID> >> /tmp/tunnel.log 2>&1 &
+
+# Restart PDS if dead
+systemctl restart mypds
+# or foreground:
+source /opt/mypds/.venv/bin/activate && mypds run --listen_host=127.0.0.1 --listen_port=3030
+```
+
+Also verify the tunnel config points to TCP (not unix socket):
+```yaml
+ingress:
+  - hostname: pds.example.com
+    service: http://127.0.0.1:3030   # must be TCP, not unix socket
 ```
 
 ### Tunnel dies, relay loses WebSocket
@@ -322,10 +346,11 @@ systemctl restart mypds
 
 ```
 /opt/mypds/
-├── .venv/              # Python virtualenv
-├── repo_key.pem        # ATProto repo signing key (keep secret, but OK on server)
-├── mypds.db         # ATProto repo: MST, blobs, DIDs, auth
-└── web.sqlite3         # Web layer: sessions, pages, media metadata
+├── .venv/                    # Python virtualenv
+├── repo_key.pem              # ATProto repo signing key (keep secret, but OK on server)
+└── data/
+    ├── mypds.sqlite3         # ATProto repo: MST, blobs, DIDs, auth, OAuth tokens
+    └── web.sqlite3           # Web layer: sessions, pages, media metadata, connected apps
 
 # Store these offline, never on server:
 <handle>_rotation_key.pem   # master identity key — loss = unrecoverable DID

@@ -4,6 +4,7 @@ import base64
 import secrets
 import time
 import uuid
+import urllib.parse
 from typing import Dict, Any
 
 import jwt
@@ -16,6 +17,7 @@ from cryptography.hazmat.primitives import serialization
 
 from . import database
 from .app_util import *
+from .web import MILLIPDS_WEB_STORE
 
 logger = logging.getLogger(__name__)
 
@@ -51,19 +53,23 @@ def sign_oauth_token(
 	sub: str,
 	scope: str,
 	cnf_jkt: str,
+	client_id: str = None,
 ) -> str:
 	"""Sign an OAuth access token JWT with ES256"""
 	privkey = serialization.load_pem_private_key(privkey_pem.encode(), password=None)
+	now = int(time.time())
 	payload = {
 		"iss": iss,
 		"aud": aud,
 		"sub": sub,
 		"scope": scope,
 		"cnf": {"jkt": cnf_jkt},
-		"iat": int(time.time()),
-		"exp": int(time.time()) + 7200,  # 2 hours
+		"iat": now,
+		"exp": now + 7200,  # 2 hours
 		"jti": str(uuid.uuid4()),
 	}
+	if client_id:
+		payload["client_id"] = client_id
 	return jwt.encode(payload, privkey, algorithm="ES256")
 
 
@@ -87,7 +93,7 @@ routes = web.RouteTableDef()
 
 # we need to use a weaker-than-usual CSP to let the CSS and form submission work
 WEBUI_HEADERS = {
-	"Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"
+	"Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
 }
 
 
@@ -272,14 +278,14 @@ async def oauth_authorize_handle_login(request: web.Request):
 
 	# Look up PAR request
 	par_row = db.con.execute(
-		"SELECT client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk, state, expires_at FROM oauth_par_request WHERE request_uri=?",
+		"SELECT client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk, state, response_mode, expires_at FROM oauth_par_request WHERE request_uri=?",
 		(request_uri,),
 	).fetchone()
 
 	if not par_row:
 		raise web.HTTPBadRequest(text="invalid request_uri")
 
-	client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk_blob, state, expires_at = par_row
+	client_id, redirect_uri, scope, code_challenge, code_challenge_method, dpop_jwk_blob, state, response_mode, expires_at = par_row
 
 	if expires_at < int(time.time()):
 		raise web.HTTPBadRequest(text="request_uri expired")
@@ -324,11 +330,17 @@ async def oauth_authorize_handle_login(request: web.Request):
 		),
 	)
 
-	# Redirect back to client with code and state
-	redirect_url = f"{redirect_uri}?code={auth_code}&iss={cfg['auth_pfx']}"
-
+	# Build redirect params
+	params = {"code": auth_code, "iss": cfg["auth_pfx"]}
 	if state:
-		redirect_url += f"&state={state}"
+		params["state"] = state
+	encoded = urllib.parse.urlencode(params)
+
+	# response_mode: fragment → code in #hash, query → code in ?query
+	if response_mode == "fragment":
+		redirect_url = f"{redirect_uri}#{encoded}"
+	else:
+		redirect_url = f"{redirect_uri}?{encoded}"
 
 	return web.Response(
 		status=302,
@@ -348,14 +360,17 @@ def dpop_protected(handler):
 			raise web.HTTPBadRequest(text="missing dpop")
 
 		# we're not verifying yet, we just want to pull out the jwk from the header
-		unverified = jwt.api_jwt.decode_complete(
-			dpop, options={"verify_signature": False}
-		)
-		jwk_data = unverified["header"]["jwk"]
-		jwk = jwt.PyJWK.from_dict(jwk_data)
-		decoded: dict = jwt.decode(
-			dpop, key=jwk
-		)  # actual signature verification happens here
+		try:
+			unverified = jwt.api_jwt.decode_complete(
+				dpop, options={"verify_signature": False}
+			)
+			jwk_data = unverified["header"]["jwk"]
+			jwk = jwt.PyJWK.from_dict(jwk_data)
+			decoded: dict = jwt.decode(
+				dpop, key=jwk, options={"verify_aud": False}
+			)  # actual signature verification happens here
+		except (jwt.exceptions.PyJWTError, KeyError, ValueError) as e:
+			raise web.HTTPBadRequest(text=f"invalid dpop: {e}")
 
 		logger.info(decoded)
 		logger.info(request.url)
@@ -385,10 +400,10 @@ def dpop_protected(handler):
 						"error": "use_dpop_nonce",
 						"error_description": "Authorization server requires nonce in DPoP proof",
 					}
-				),
+				).encode(),
+				content_type="application/json",
 				headers={
 					"DPoP-Nonce": DPOP_NONCE,
-					"Content-Type": "application/json",
 				},  # if we don't put it here, the client will never see it
 			)
 
@@ -441,16 +456,19 @@ async def oauth_pushed_authorization_request(request: web.Request):
 	request_uri = generate_request_uri()
 	expires_at = int(time.time()) + 600  # 10 minutes
 
-	# Extract state if provided
-	state = data.get("state", "")
+	# Extract optional fields
+	state = data.get("state", "") or None
+	response_mode = data.get("response_mode", "query")
+	if response_mode not in ("query", "fragment"):
+		response_mode = "query"
 
 	# Store PAR request
 	db.con.execute(
 		"""
 		INSERT INTO oauth_par_request(
 			request_uri, client_id, redirect_uri, scope,
-			code_challenge, code_challenge_method, dpop_jwk, state, expires_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			code_challenge, code_challenge_method, dpop_jwk, state, response_mode, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		""",
 		(
 			request_uri,
@@ -460,7 +478,8 @@ async def oauth_pushed_authorization_request(request: web.Request):
 			data["code_challenge"],
 			data["code_challenge_method"],
 			request["dpop_jwk"],
-			state if state else None,
+			state,
+			response_mode,
 			expires_at,
 		),
 	)
@@ -469,7 +488,8 @@ async def oauth_pushed_authorization_request(request: web.Request):
 		{
 			"request_uri": request_uri,
 			"expires_in": 600,
-		}
+		},
+		status=201,
 	)
 
 
@@ -534,14 +554,31 @@ async def oauth_token(request: web.Request):
 		raise web.HTTPBadRequest(text="invalid code_verifier")
 
 	# Verify DPoP JWK thumbprint matches
-	current_dpop_jkt = jwk_thumbprint(request["dpop_jwk"])
+	current_dpop_jkt = jwk_thumbprint(cbrrr.decode_dag_cbor(request["dpop_jwk"]))
 	if current_dpop_jkt != dpop_jkt:
 		raise web.HTTPBadRequest(text="dpop jkt mismatch")
 
 	# Mark code as used
 	db.con.execute("UPDATE oauth_auth_code SET used=1 WHERE code=?", (code,))
 
-	# Sign access token
+	# Track app login — record the moment of OAuth connection
+	try:
+		from urllib.parse import urlparse
+		parsed = urlparse(client_id)
+		domain = parsed.netloc.lstrip("www.")
+		client_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else None
+		if domain:
+			request.app[MILLIPDS_WEB_STORE].track_app_call(domain, "oauth.connect", client_url=client_url)
+	except Exception:
+		pass
+
+	# Fetch birthdate
+	bd_row = db.con.execute(
+		"SELECT birthdate FROM user WHERE did=?", (did,)
+	).fetchone()
+	birthdate = bd_row[0] if bd_row else None
+
+	# Sign access token (embed client_id so tracking works even without Referer/Origin)
 	access_token = sign_oauth_token(
 		privkey_pem=cfg["server_as_privkey"],
 		iss=cfg["auth_pfx"],
@@ -549,14 +586,24 @@ async def oauth_token(request: web.Request):
 		sub=did,
 		scope=scope,
 		cnf_jkt=current_dpop_jkt,
+		client_id=client_id,
 	)
 
-	return web.json_response(
-		{
-			"access_token": access_token,
-			"token_type": "DPoP",
-			"expires_in": 7200,
-			"scope": scope,
-			"sub": did,
-		}
-	)
+	response = {
+		"access_token": access_token,
+		"token_type": "DPoP",
+		"expires_in": 7200,
+		"scope": scope,
+		"sub": did,
+	}
+
+	if birthdate:
+		response["birthDate"] = birthdate
+
+	return web.json_response(response)
+
+
+@as_routes.post("/oauth/revoke")
+async def oauth_revoke(request: web.Request):
+	"""RFC 7009 token revocation — we accept but don't store revocations for now."""
+	return web.Response(status=200)

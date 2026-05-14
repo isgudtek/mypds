@@ -80,22 +80,29 @@ def authenticated(handler):
 	async def authentication_handler(request: web.Request, *args, **kwargs):
 		# extract the auth token
 		auth = request.headers.get("Authorization")
+		logger.info(f"auth check {request.method} {request.path}: Authorization={'<present>' if auth else 'MISSING'}")
 		if auth is None:
 			raise web.HTTPUnauthorized(
 				text="authentication required (this may be a bug, I'm erring on the side of caution for now)"
 			)
-		if not auth.startswith("Bearer "):
+		if auth.startswith("Bearer "):
+			token = auth.removeprefix("Bearer ")
+		elif auth.startswith("DPoP "):
+			# RFC 9449: DPoP-bound access tokens use "DPoP" auth type
+			token = auth.removeprefix("DPoP ")
+		else:
 			raise web.HTTPUnauthorized(text="invalid auth type")
-		token = auth.removeprefix("Bearer ")
 
 		# validate it TODO: this needs rigorous testing, I'm not 100% sure I'm
 		# verifying all the things that need verifying
 		db = get_db(request)
 
-		unverified = jwt.api_jwt.decode_complete(
-			token, options={"verify_signature": False}
-		)
-		# logger.info(unverified)
+		try:
+			unverified = jwt.api_jwt.decode_complete(
+				token, options={"verify_signature": False}
+			)
+		except jwt.exceptions.PyJWTError:
+			raise web.HTTPUnauthorized(text="invalid jwt")
 
 		cfg = db.config
 
@@ -104,6 +111,7 @@ def authenticated(handler):
 				request, token, "com.atproto.access"
 			)["sub"]
 		elif unverified["payload"].get("iss") == cfg["auth_pfx"]:  # OAuth access token
+			logger.info(f"OAuth token branch: iss={unverified['payload'].get('iss')!r}")
 			# Verify with server AS public key
 			privkey_pem = cfg["server_as_privkey"]
 			privkey = serialization.load_pem_private_key(privkey_pem.encode(), password=None)
@@ -124,12 +132,16 @@ def authenticated(handler):
 					},
 				)
 			except jwt.exceptions.PyJWTError as e:
+				logger.warning(f"OAuth token verify failed: {e}")
 				raise web.HTTPUnauthorized(text=f"invalid oauth token: {e}")
+
+			logger.info(f"OAuth token verified: sub={payload.get('sub')!r} cnf={payload.get('cnf')!r}")
 
 			# Verify DPoP binding if present
 			if "cnf" in payload and "jkt" in payload["cnf"]:
 				dpop = request.headers.get("dpop")
 				if not dpop:
+					logger.warning(f"Missing DPoP header for OAuth request to {request.path}")
 					raise web.HTTPUnauthorized(text="dpop required for this token")
 
 				try:
@@ -138,16 +150,19 @@ def authenticated(handler):
 					)
 					jwk_data = unverified_dpop["header"]["jwk"]
 					jwk = jwt.PyJWK.from_dict(jwk_data)
-					jwt.decode(dpop, key=jwk)  # verify signature
+					jwt.decode(dpop, key=jwk, algorithms=["ES256", "ES256K", "EdDSA"], options={"verify_aud": False})
 
 					# Verify thumbprint matches
 					current_jkt = jwk_thumbprint(jwk_data)
 					if current_jkt != payload["cnf"]["jkt"]:
+						logger.warning(f"DPoP jkt mismatch: {current_jkt!r} != {payload['cnf']['jkt']!r}")
 						raise web.HTTPUnauthorized(text="dpop jkt mismatch")
-				except jwt.exceptions.PyJWTError:
+				except jwt.exceptions.PyJWTError as e:
+					logger.warning(f"DPoP proof invalid: {e}")
 					raise web.HTTPUnauthorized(text="invalid dpop proof")
 
 			request["authed_did"] = payload["sub"]
+			request["oauth_client_id"] = payload.get("client_id")
 		else:  # asymmetric service auth (scoped to a specific lxm)
 			did: str = unverified["payload"]["iss"]
 			if not did.startswith("did:"):

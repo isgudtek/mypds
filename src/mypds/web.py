@@ -305,8 +305,8 @@ async def login_page(request: web.Request):
 	if not ws.is_initialized():
 		raise web.HTTPFound("/")
 	if get_session(request):
-		raise web.HTTPFound("/dashboard")
-	return render(request, "node_login.html", {"error": None})
+		raise web.HTTPFound(request.query.get("next", "/dashboard"))
+	return render(request, "node_login.html", {"error": None, "next": request.query.get("next", "")})
 
 
 @web_routes.post("/login")
@@ -314,6 +314,10 @@ async def login_post(request: web.Request):
 	data = await request.post()
 	identifier = data.get("identifier", "").strip()
 	password = data.get("password", "")
+	next_url = request.query.get("next", "/dashboard")
+	# Only allow relative paths to prevent open redirect
+	if not next_url.startswith("/"):
+		next_url = "/dashboard"
 
 	db = get_db(request)
 	ws = get_web_store(request)
@@ -324,13 +328,13 @@ async def login_post(request: web.Request):
 	except (KeyError, ValueError):
 		if first_run:
 			return render(request, "node_init.html", {"error": "Invalid credentials"})
-		return render(request, "node_login.html", {"error": "Invalid credentials"}, status=401)
+		return render(request, "node_login.html", {"error": "Invalid credentials", "next": next_url}, status=401)
 
 	if first_run:
 		ws.mark_initialized()
 
 	token = ws.create_session(did, handle)
-	resp = redirect("/dashboard")
+	resp = redirect(next_url)
 	set_session_cookie(resp, token)
 	return resp
 

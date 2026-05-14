@@ -49,7 +49,25 @@ PROXY_OVERRIDE_PATHS = [
 	# bsky-specific hack - appview does not implement these routes
 	"/xrpc/app.bsky.actor.getPreferences",
 	"/xrpc/app.bsky.actor.putPreferences",
+	"/xrpc/app.bsky.ageassurance.getState",
+	"/xrpc/app.bsky.ageassurance.getConfig",
+	"/xrpc/app.bsky.unspecced.getAgeAssuranceState",
+	"/xrpc/app.bsky.unspecced.initAgeAssurance",
 ]
+
+
+@web.middleware
+async def cors_error_middleware(request: web.Request, handler):
+	"""Ensure CORS headers are present even on HTTP error responses."""
+	try:
+		return await handler(request)
+	except web.HTTPException as exc:
+		origin = request.headers.get("Origin")
+		if origin:
+			exc.headers.setdefault("Access-Control-Allow-Origin", origin)
+			exc.headers.setdefault("Access-Control-Allow-Credentials", "true")
+			exc.headers.setdefault("Access-Control-Expose-Headers", "DPoP-Nonce")
+		raise
 
 
 @web.middleware
@@ -75,23 +93,40 @@ async def atproto_service_proxy_middleware(request: web.Request, handler):
 	# else, normal response
 	res: web.Response = await handler(request)
 
-	# track external app logins via XRPC calls
-	if (
-		request.path.startswith("/xrpc/")
-		and request.headers.get("Authorization")
-		and res.status < 400
-	):
-		referer = request.headers.get("Referer", "")
-		if referer:
-			try:
-				from urllib.parse import urlparse
-				domain = urlparse(referer).netloc.lstrip("www.")
-				nsid = request.path[len("/xrpc/"):]
-				if domain and nsid and "." in nsid:
-					ws = request.app[MILLIPDS_WEB_STORE]
-					ws.track_app_call(domain, nsid)
-			except Exception:
-				pass
+	# track external app XRPC calls
+	if request.path.startswith("/xrpc/") and res.status < 400:
+		try:
+			from urllib.parse import urlparse
+			domain = None
+
+			# Referer/Origin: browser-initiated calls (clearsky.app, bsky.app, etc.)
+			source = (
+				request.headers.get("Referer", "")
+				or request.headers.get("Origin", "")
+			)
+			if source:
+				candidate = urlparse(source).netloc.lstrip("www.")
+				# ignore calls from our own PDS dashboard
+				cfg = get_db(request).config
+				own_host = urlparse(cfg.get("pds_pfx", "")).netloc
+				if candidate and candidate != own_host:
+					domain = candidate
+
+			# client_id from OAuth token: server-side calls with no Referer/Origin
+			client_url = None
+			if not domain and request.headers.get("Authorization"):
+				client_id = request.get("oauth_client_id")
+				if client_id:
+					parsed_cid = urlparse(client_id)
+					domain = parsed_cid.netloc.lstrip("www.")
+					client_url = f"{parsed_cid.scheme}://{parsed_cid.netloc}"
+
+			nsid = request.path[len("/xrpc/"):]
+			if domain and nsid and "." in nsid:
+				ws = request.app[MILLIPDS_WEB_STORE]
+				ws.track_app_call(domain, nsid, client_url=client_url)
+		except Exception:
+			pass
 
 	# inject security headers (this should really be a separate middleware, but here works too)
 	# skip for static files — they are not HTML documents and don't need document-level CSP
@@ -243,6 +278,47 @@ async def actor_get_preferences(request: web.Request):
 	return web.json_response(prefs)
 
 
+@routes.get("/xrpc/app.bsky.ageassurance.getConfig")
+async def bsky_age_assurance_get_config(request: web.Request):
+	return web.json_response({
+		"$type": "app.bsky.ageassurance.defs#config",
+		"regions": [],
+	})
+
+
+@routes.get("/xrpc/app.bsky.ageassurance.getState")
+@authenticated
+async def bsky_age_assurance_get_state(request: web.Request):
+	logger.info(f"LOCAL getState called for {request['authed_did']} proxy_hdr={request.headers.get('atproto-proxy')}")
+	return web.json_response({
+		"$type": "app.bsky.ageassurance.defs#stateView",
+		"state": {
+			"$type": "app.bsky.ageassurance.defs#state",
+			"status": "assured",
+			"access": "full",
+		},
+		"metadata": {},
+	})
+
+
+@routes.get("/xrpc/app.bsky.unspecced.getAgeAssuranceState")
+@authenticated
+async def bsky_unspecced_get_age_assurance_state(request: web.Request):
+	logger.info(f"LOCAL unspecced.getAgeAssuranceState called for {request['authed_did']}")
+	return web.json_response({
+		"status": "assured",
+	})
+
+
+@routes.post("/xrpc/app.bsky.unspecced.initAgeAssurance")
+@authenticated
+async def bsky_unspecced_init_age_assurance(request: web.Request):
+	logger.info(f"LOCAL unspecced.initAgeAssurance intercepted for {request['authed_did']}")
+	return web.json_response({
+		"status": "assured",
+	})
+
+
 @routes.get("/xrpc/com.atproto.identity.resolveHandle")
 async def identity_resolve_handle(request: web.Request):
 	handle = request.query.get("handle")
@@ -270,14 +346,24 @@ async def server_describe_server(request: web.Request):
 
 
 def session_info(request: web.Request) -> dict:
+	db = get_db(request)
+	did = request["authed_did"]
+
+	# fetch birthdate from user table
+	row = db.con.execute(
+		"SELECT birthdate FROM user WHERE did=?", (did,)
+	).fetchone()
+	birthdate = row[0] if row else None
+
 	return {
-		"handle": get_db(request).handle_by_did(request["authed_did"]),
-		"did": request["authed_did"],
+		"handle": db.handle_by_did(did),
+		"did": did,
 		# we specify a fake email and claim it's verified, because otherwise
 		# bsky.app would nag us to verify it
 		"email": "tfw_no@email.invalid",
 		"emailConfirmed": True,
 		# "didDoc": {}, # iiuc this is only used for entryway usecase?
+		"birthDate": birthdate,
 	}
 
 
@@ -630,7 +716,7 @@ def construct_app(
 	jinja_env.filters['timestamp'] = _timestamp_filter
 	jinja_env.filters['tojson'] = lambda v: __import__('json').dumps(v, ensure_ascii=False)
 
-	app = web.Application(middlewares=[cors, atproto_service_proxy_middleware])
+	app = web.Application(middlewares=[cors_error_middleware, cors, atproto_service_proxy_middleware])
 	app[MILLIPDS_DB] = db
 	app[MILLIPDS_AIOHTTP_CLIENT] = client
 	app[MILLIPDS_FIREHOSE_QUEUES] = set()

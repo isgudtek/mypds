@@ -17,7 +17,11 @@ Fork of [millipds](https://github.com/DavidBuchanan314/millipds) by David Buchan
 | **Compose** | `app.bsky.feed.post` | Write posts, broadcast to firehose, Bluesky-compatible |
 | **Blog / Pages** | `com.whtwnd.blog.entry` | Publish pages/posts, readable by WhiteWind and any ATProto client |
 | **Gallery** | `pub.gallery.image` | Photo grid with lightbox, tags, drag-and-drop upload |
-| **Files** | `app.bsky.feed.post` (attachment) | Upload and share any file via ATProto blob store |
+| **Files** | blob store | Upload and share any file via ATProto blob store |
+| **Places** | `pub.places.pin` | Map of pinned locations, viewable publicly |
+| **Links** | `pub.social.linktree` | Public link list / linktree |
+| **Dropbox** | blob store | File inbox — anyone can drop files for the owner to review |
+| **Connected Apps** | — | OAuth apps that have authenticated; tracks calls per NSID |
 | **Node Info** | — | Public stats, ATProto endpoints, DID document |
 
 All data lives in **your** ATProto repo (MST), propagated on the firehose. Every photo, every post, every page is a real ATProto record with a real `at://` URI.
@@ -39,10 +43,14 @@ mypds run --pds-pfx https://your.domain --pds-did-plc https://plc.directory
 
 - **ATProto-native storage** — every record in the MST, every blob in the blob store
 - **Firehose broadcast** — posts and records propagate to relays in real time
+- **OAuth 2.0 login** — third-party ATProto apps (bsky.app, clearsky, WhiteWind, tangled, plyr, etc.) authenticate via standard ATProto OAuth with DPoP (RFC 9449)
+- **Connected Apps** — tracks every OAuth app that logs in, with per-NSID call counts and clickable links
 - **WhiteWind blog** — pages use `com.whtwnd.blog.entry` so they appear in WhiteWind
 - **Password-protected pages** — SHA-256 gate, 24h cookie, owner bypass
 - **Images in posts and pages** — markdown `![alt](url)` support, inline blob refs
 - **Gallery** — `pub.gallery.image` records with tags, ATProto Browser links
+- **Places & Links** — `pub.places.pin` map pins and `pub.social.linktree` link list
+- **Dropbox** — public file inbox; owner reviews and accepts/rejects uploads
 - **Node info page** — public DID, endpoints, stats, software stack
 - **Relay crawl on startup** — auto-requests re-index after tunnel restarts
 - **Dark-mode UI** — minimal, monospaced, terminal-aesthetic
@@ -63,8 +71,8 @@ mypds/
 ```
 
 Storage: two SQLite databases via `apsw`
-- `mypds.db` — ATProto repo (MST, blobs, DIDs, auth)
-- `web.sqlite3` — pages, sessions, media metadata
+- `data/mypds.sqlite3` — ATProto repo (MST, blobs, DIDs, auth, OAuth tokens)
+- `data/web.sqlite3` — pages, sessions, media metadata, connected apps log
 
 ---
 
@@ -79,6 +87,12 @@ Storage: two SQLite databases via `apsw`
 | `/pages` | owner | Manage blog pages |
 | `/p/{slug}` | public* | Read a page (*password gate if protected) |
 | `/files` | owner | Upload files, get direct links |
+| `/places` | public | Map of `pub.places.pin` records |
+| `/links` | public | Link list / linktree |
+| `/dropbox` | public | Public file inbox |
+| `/connected-apps` | owner | OAuth apps log with per-NSID call counts |
+| `/dashboard` | owner | Stats overview and quick actions |
+| `/settings` | owner | Nickname, profile photo, accent color |
 | `/node-info` | public | DID, ATProto endpoints, stats |
 | `/login` `/logout` | — | Session auth |
 

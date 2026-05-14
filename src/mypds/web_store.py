@@ -60,9 +60,14 @@ class WebStore:
 				first_seen INTEGER NOT NULL,
 				last_seen  INTEGER NOT NULL,
 				call_count INTEGER NOT NULL DEFAULT 1,
+				client_url TEXT,
 				PRIMARY KEY (domain, nsid)
 			)
 		""")
+		# Add client_url to existing installs
+		al_cols = {r[1] for r in self.con.execute("PRAGMA table_info(app_logins)").fetchall()}
+		if "client_url" not in al_cols:
+			self.con.execute("ALTER TABLE app_logins ADD COLUMN client_url TEXT")
 		# Ensure dropbox_item table exists
 		self.con.execute("""
 			CREATE TABLE IF NOT EXISTS dropbox_item (
@@ -331,18 +336,19 @@ class WebStore:
 
 	# ── App login tracking ────────────────────────────────────────────────────
 
-	def track_app_call(self, domain: str, nsid: str) -> None:
+	def track_app_call(self, domain: str, nsid: str, client_url: str = None) -> None:
 		now = int(time.time())
 		self.con.execute(
-			"INSERT INTO app_logins(domain, nsid, first_seen, last_seen, call_count) VALUES(?,?,?,?,1) "
-			"ON CONFLICT(domain, nsid) DO UPDATE SET last_seen=excluded.last_seen, call_count=call_count+1",
-			(domain, nsid, now, now),
+			"INSERT INTO app_logins(domain, nsid, first_seen, last_seen, call_count, client_url) VALUES(?,?,?,?,1,?) "
+			"ON CONFLICT(domain, nsid) DO UPDATE SET last_seen=excluded.last_seen, call_count=call_count+1, "
+			"client_url=COALESCE(excluded.client_url, app_logins.client_url)",
+			(domain, nsid, now, now, client_url),
 		)
 		self.con.commit()
 
 	def get_app_logins(self) -> list:
 		rows = self.con.execute(
-			"SELECT domain, nsid, first_seen, last_seen, SUM(call_count) as calls "
+			"SELECT domain, nsid, first_seen, last_seen, SUM(call_count) as calls, MAX(client_url) as client_url "
 			"FROM app_logins GROUP BY domain, nsid ORDER BY domain, last_seen DESC"
 		).fetchall()
 		# Group by domain
@@ -351,11 +357,14 @@ class WebStore:
 			d = r["domain"]
 			if d not in apps:
 				apps[d] = {"domain": d, "first_seen": r["first_seen"],
-				            "last_seen": r["last_seen"], "nsids": [], "total_calls": 0}
+				            "last_seen": r["last_seen"], "nsids": [], "total_calls": 0,
+				            "client_url": r["client_url"]}
 			apps[d]["nsids"].append({"nsid": r["nsid"], "calls": r["calls"]})
 			apps[d]["total_calls"] += r["calls"]
 			apps[d]["first_seen"] = min(apps[d]["first_seen"], r["first_seen"])
 			apps[d]["last_seen"]  = max(apps[d]["last_seen"],  r["last_seen"])
+			if r["client_url"]:
+				apps[d]["client_url"] = r["client_url"]
 		return sorted(apps.values(), key=lambda a: a["last_seen"], reverse=True)
 
 	# ── Dropbox ───────────────────────────────────────────────────────────────

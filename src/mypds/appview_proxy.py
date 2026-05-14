@@ -36,9 +36,10 @@ async def service_proxy(request: web.Request, service: Optional[str] = None):
 				service_route = service_info["serviceEndpoint"]
 				break
 		else:
-			return web.HTTPBadRequest(
-				text=f"unable to resolve service {service!r}"
-			)
+			# Unknown fragment — fall back to default appview rather than erroring
+			logger.warning(f"unknown service fragment {service!r}, falling back to default appview")
+			service_did = db.config["bsky_appview_did"]
+			service_route = db.config["bsky_appview_pfx"]
 	else:  # fall thru to assuming bsky appview
 		service_did = db.config["bsky_appview_did"]
 		service_route = db.config["bsky_appview_pfx"]

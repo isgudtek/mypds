@@ -9,7 +9,6 @@ import asyncio
 
 from . import repo_ops
 from . import static_config
-from .appview_proxy import service_proxy
 from .auth_bearer import authenticated
 from .app_util import *
 
@@ -199,8 +198,17 @@ async def repo_get_record(request: web.Request):
 		(did_or_handle, did_or_handle, collection, rkey),
 	).fetchone()
 	if row is None:
-		return await service_proxy(request)  # forward to appview
-		# raise web.HTTPNotFound(text="record not found")
+		# Only bsky-namespace records are federated through the appview.
+		# For all other namespaces this PDS is authoritative — return 404 directly.
+		if collection.startswith("app.bsky.") or collection.startswith("chat.bsky."):
+			cfg = get_db(request).config
+			async with get_client(request).get(
+				cfg["bsky_appview_pfx"] + request.path,
+				params=request.query,
+			) as r:
+				body = await r.read()
+				return web.Response(body=body, content_type=r.content_type, status=r.status)
+		raise web.HTTPNotFound(text="record not found")
 	cid_out, value = row
 	cid_out = cbrrr.CID(cid_out)
 	if cid_in is not None:

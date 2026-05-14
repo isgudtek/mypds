@@ -363,9 +363,9 @@ async def sync_subscribe_repos(request: web.Request):
 					"SELECT IFNULL(MAX(seq), 0) FROM firehose"
 				).get
 				if cursor > current_seq:
-					await ws.send_bytes(FUTURECURSOR_MSG)
-					await ws.close()
-					return ws
+					# cursor is ahead of our history (e.g. after a DB reset) — fall through
+					# to livetailing so the relay stays connected and gets new events
+					logger.warning(f"cursor {cursor} > max seq {current_seq}, falling through to livetail")
 				# else if cursor == current_seq, fall thru to livetailing (someone was reconnecting where they left off)
 	except ConnectionResetError:  # TODO: other types of error???
 		await ws.close()
