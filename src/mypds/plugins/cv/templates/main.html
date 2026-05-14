@@ -1,0 +1,308 @@
+{% extends "node_base.html" %}
+{% block title %}{{ nickname }} · profile{% endblock %}
+
+{% block head %}
+<style>
+/* ── Layout ── */
+.cv-wrap { max-width: 780px; margin: 0 auto; padding: 40px 16px 80px; }
+
+/* ── Hero ── */
+.cv-hero {
+  display: flex; align-items: flex-start; gap: 24px;
+  margin-bottom: 36px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+}
+.cv-avatar {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--surface2); flex-shrink: 0;
+  object-fit: cover; border: 2px solid var(--border);
+}
+.cv-avatar-placeholder {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--surface2); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem; border: 2px solid var(--border);
+}
+.cv-hero-info { flex: 1; min-width: 0; }
+.cv-name {
+  font-size: 1.6rem; font-weight: 800; color: var(--text);
+  line-height: 1.1; margin-bottom: 4px;
+}
+.cv-headline {
+  font-size: .95rem; color: var(--dim); margin-bottom: 6px;
+}
+.cv-location {
+  font-size: .78rem; font-family: var(--mono); color: var(--dim);
+  display: flex; align-items: center; gap: 4px; margin-bottom: 12px;
+}
+.cv-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv-link-pill {
+  font-size: .72rem; font-family: var(--mono);
+  color: var(--dim); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 10px;
+  text-decoration: none; transition: border-color .15s, color .15s;
+  cursor: pointer;
+}
+.cv-link-pill:hover { color: var(--cyan); border-color: var(--cyan); }
+.cv-edit-btn {
+  font-size: .7rem; font-family: var(--mono);
+  color: var(--dim); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 9px;
+  text-decoration: none; cursor: pointer; flex-shrink: 0;
+}
+.cv-edit-btn:hover { color: var(--text); border-color: var(--border2); }
+
+/* ── Section ── */
+.cv-section { margin-bottom: 36px; }
+.cv-section-title {
+  font-size: .65rem; font-family: var(--mono);
+  color: var(--dim); text-transform: uppercase; letter-spacing: .1em;
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.cv-section-title::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+/* ── Summary ── */
+.cv-summary {
+  font-size: .9rem; line-height: 1.7; color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* ── Skills ── */
+.cv-skills { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv-skill {
+  font-size: .72rem; font-family: var(--mono);
+  color: var(--cyan); border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent);
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
+  border-radius: 4px; padding: 3px 9px;
+}
+
+/* ── Experience timeline ── */
+.cv-timeline { position: relative; padding-left: 20px; }
+.cv-timeline::before {
+  content: ''; position: absolute; left: 5px; top: 6px; bottom: 6px;
+  width: 1px; background: var(--border);
+}
+.cv-exp {
+  position: relative; margin-bottom: 24px;
+}
+.cv-exp::before {
+  content: ''; position: absolute; left: -16px; top: 6px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--cyan);
+}
+.cv-exp__header {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 2px;
+}
+.cv-exp__role   { font-weight: 700; font-size: .9rem; color: var(--text); }
+.cv-exp__company { font-size: .85rem; color: var(--dim); }
+.cv-exp__period {
+  font-size: .68rem; font-family: var(--mono); color: var(--dim);
+  margin-left: auto;
+}
+.cv-exp__desc {
+  font-size: .82rem; line-height: 1.65; color: var(--muted);
+  white-space: pre-wrap; margin-top: 4px;
+}
+
+/* ── Projects ── */
+.cv-projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 12px; }
+.cv-project {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px 16px;
+  text-decoration: none; display: block;
+  transition: border-color .15s, transform .15s;
+  cursor: pointer;
+}
+.cv-project:hover { border-color: var(--border2); transform: translateY(-2px); }
+.cv-project__name { font-weight: 700; font-size: .88rem; color: var(--text); margin-bottom: 4px; }
+.cv-project__desc { font-size: .75rem; color: var(--dim); line-height: 1.5; }
+.cv-project__url  { font-size: .65rem; font-family: var(--mono); color: var(--cyan); margin-top: 8px; }
+
+/* ── Education ── */
+.cv-edu { margin-bottom: 14px; }
+.cv-edu__header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.cv-edu__degree  { font-weight: 600; font-size: .87rem; color: var(--text); }
+.cv-edu__school  { font-size: .82rem; color: var(--dim); }
+.cv-edu__period  { font-size: .68rem; font-family: var(--mono); color: var(--dim); margin-left: auto; }
+
+/* ── ATProto live section ── */
+.cv-atproto { display: flex; flex-wrap: wrap; gap: 8px; }
+.cv-at-pill {
+  font-size: .72rem; font-family: var(--mono);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 10px; color: var(--dim);
+  text-decoration: none; cursor: pointer;
+}
+.cv-at-pill:hover { color: var(--text); border-color: var(--border2); }
+.cv-at-pill strong { color: var(--text); }
+
+/* ── Private banner ── */
+.cv-private {
+  font-size: .72rem; font-family: var(--mono); color: var(--dim);
+  background: color-mix(in srgb, var(--red) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--red) 25%, transparent);
+  border-radius: 4px; padding: 6px 12px;
+  margin-bottom: 24px; display: flex; align-items: center; gap: 6px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cv-wrap">
+
+  {% if is_owner and not cv.public %}
+  <div class="cv-private">
+    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </svg>
+    private — only you can see this
+    <a href="/cv/edit" style="color:var(--cyan); margin-left:auto; text-decoration:none; cursor:pointer;">make public →</a>
+  </div>
+  {% endif %}
+
+  <!-- Hero -->
+  <div class="cv-hero">
+    {% if pfp_url %}
+    <img class="cv-avatar" src="{{ pfp_url }}" alt="{{ nickname }}">
+    {% else %}
+    <div class="cv-avatar-placeholder">🦀</div>
+    {% endif %}
+    <div class="cv-hero-info">
+      <div class="cv-name">{{ nickname }}</div>
+      {% if cv.headline %}<div class="cv-headline">{{ cv.headline }}</div>{% endif %}
+      {% if cv.location %}
+      <div class="cv-location">
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+        {{ cv.location }}
+      </div>
+      {% endif %}
+      <div class="cv-links">
+        {% for lnk in cv.links %}
+        <a class="cv-link-pill" href="{{ lnk.url }}" target="_blank" rel="noopener">{{ lnk.label }}</a>
+        {% endfor %}
+        {% if profile.handle %}
+        <a class="cv-link-pill" href="https://bsky.app/profile/{{ profile.handle }}" target="_blank" rel="noopener">bsky</a>
+        {% endif %}
+        {% if atctx.plyr_url %}
+        <a class="cv-link-pill" href="{{ atctx.plyr_url }}" target="_blank" rel="noopener">plyr</a>
+        {% endif %}
+      </div>
+    </div>
+    {% if is_owner %}
+    <a class="cv-edit-btn" href="/cv/edit" style="cursor:pointer;">edit</a>
+    {% endif %}
+  </div>
+
+  <!-- Summary -->
+  {% if cv.summary %}
+  <div class="cv-section">
+    <div class="cv-section-title">about</div>
+    <div class="cv-summary">{{ cv.summary }}</div>
+  </div>
+  {% endif %}
+
+  <!-- Skills -->
+  {% if cv.skills %}
+  <div class="cv-section">
+    <div class="cv-section-title">skills</div>
+    <div class="cv-skills">
+      {% for s in cv.skills %}<span class="cv-skill">{{ s }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Experience -->
+  {% if cv.experience %}
+  <div class="cv-section">
+    <div class="cv-section-title">experience</div>
+    <div class="cv-timeline">
+      {% for e in cv.experience %}
+      <div class="cv-exp">
+        <div class="cv-exp__header">
+          <span class="cv-exp__role">{{ e.role }}</span>
+          {% if e.company %}<span class="cv-exp__company">@ {{ e.company }}</span>{% endif %}
+          {% if e.from_ or e.to %}
+          <span class="cv-exp__period">{{ e.from_ }}{% if e.to %} – {{ e.to }}{% endif %}</span>
+          {% endif %}
+        </div>
+        {% if e.desc %}<div class="cv-exp__desc">{{ e.desc }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Projects -->
+  {% if cv.projects %}
+  <div class="cv-section">
+    <div class="cv-section-title">projects</div>
+    <div class="cv-projects">
+      {% for p in cv.projects %}
+      <a class="cv-project" href="{{ p.url or '#' }}" {% if p.url %}target="_blank" rel="noopener"{% endif %}>
+        <div class="cv-project__name">{{ p.name }}</div>
+        {% if p.desc %}<div class="cv-project__desc">{{ p.desc }}</div>{% endif %}
+        {% if p.url %}<div class="cv-project__url">{{ p.url | truncate(40, True) }}</div>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Education -->
+  {% if cv.education %}
+  <div class="cv-section">
+    <div class="cv-section-title">education</div>
+    {% for e in cv.education %}
+    <div class="cv-edu">
+      <div class="cv-edu__header">
+        <span class="cv-edu__degree">{{ e.degree }}</span>
+        {% if e.school %}<span class="cv-edu__school">· {{ e.school }}</span>{% endif %}
+        {% if e.from_ or e.to %}
+        <span class="cv-edu__period">{{ e.from_ }}{% if e.to %} – {{ e.to }}{% endif %}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ATProto live activity -->
+  {% if atctx and (atctx.tangled or atctx.writing or atctx.posts) %}
+  <div class="cv-section">
+    <div class="cv-section-title">on-chain activity</div>
+    <div class="cv-atproto">
+      {% if atctx.posts %}
+      <span class="cv-at-pill"><strong>{{ atctx.posts }}</strong> posts</span>
+      {% endif %}
+      {% if atctx.likes %}
+      <span class="cv-at-pill"><strong>{{ atctx.likes }}</strong> likes</span>
+      {% endif %}
+      {% for repo in atctx.tangled %}
+      <a class="cv-at-pill"
+         href="https://tangled.sh/{{ profile.handle }}/{{ repo.rkey }}"
+         target="_blank" rel="noopener">
+        <strong>tangled</strong> / {{ repo.rkey }}
+      </a>
+      {% endfor %}
+      {% for post in atctx.writing %}
+      <a class="cv-at-pill"
+         href="https://whitewind.vercel.app/{{ profile.handle }}/{{ post.rkey }}"
+         target="_blank" rel="noopener">
+        ✍ {{ post.title | truncate(30, True) }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

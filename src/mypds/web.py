@@ -188,6 +188,18 @@ async def homepage(request: web.Request):
 	places = _get_places(db, profile["did"])[:3] if (profile["did"] and apps.get("places", True)) else []
 	version = _get_version()
 
+	# cv widget data
+	cv_widget = None
+	if apps.get("cv", True):
+		try:
+			import json as _json
+			_raw = ws.get_node_setting("cv_data")
+			_cv = _json.loads(_raw) if _raw else {}
+			if _cv.get("public") or get_session(request):
+				cv_widget = _cv
+		except Exception:
+			pass
+
 	return render(request, "node_home.html", {
 		"profile": profile,
 		"posts": posts,
@@ -197,6 +209,7 @@ async def homepage(request: web.Request):
 		"links": links,
 		"places": places,
 		"version": version,
+		"cv_widget": cv_widget,
 	})
 
 

@@ -1,0 +1,17 @@
+<div class="app-tile {% if not apps.cv %}app-tile--off{% endif %}">
+  <div class="app-tile__icon">
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="1.5"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  </div>
+  <div class="app-tile__name"><a href="/cv" style="color:var(--text)">profile</a></div>
+  <div class="app-tile__status" style="color:var(--cyan);">portable id</div>
+  <form method="post" action="/apps/cv/toggle" style="margin-top:6px;">
+    <button class="app-toggle {% if apps.cv %}app-toggle--on{% endif %}" type="submit" style="cursor:pointer;">
+      {{ 'on' if apps.cv else 'off' }}
+    </button>
+  </form>
+</div>

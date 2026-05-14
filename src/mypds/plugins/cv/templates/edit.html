@@ -1,0 +1,316 @@
+{% extends "node_base.html" %}
+{% block title %}edit profile{% endblock %}
+
+{% block head %}
+<style>
+.cv-edit-wrap { max-width: 700px; margin: 0 auto; padding: 32px 16px 80px; }
+.cv-edit-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 28px;
+}
+.cv-edit-header h1 { font-size: 1.1rem; font-weight: 700; margin: 0; }
+.cv-preview-link {
+  margin-left: auto; font-size: .72rem; font-family: var(--mono);
+  color: var(--dim); text-decoration: none; cursor: pointer;
+}
+.cv-preview-link:hover { color: var(--text); }
+
+.cv-fieldset {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 20px; margin-bottom: 16px;
+}
+.cv-fieldset-legend {
+  font-size: .65rem; font-family: var(--mono); color: var(--dim);
+  text-transform: uppercase; letter-spacing: .08em;
+  margin-bottom: 14px;
+}
+.cv-field { margin-bottom: 12px; }
+.cv-field label {
+  display: block; font-size: .7rem; font-family: var(--mono);
+  color: var(--dim); margin-bottom: 4px;
+}
+.cv-field input, .cv-field textarea {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 5px; padding: 7px 10px; color: var(--text);
+  font-size: .85rem; font-family: inherit; box-sizing: border-box;
+  outline: none; transition: border-color .15s;
+}
+.cv-field input:focus, .cv-field textarea:focus { border-color: var(--cyan); }
+.cv-field textarea { min-height: 90px; resize: vertical; line-height: 1.55; }
+.cv-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cv-row-4 { display: grid; grid-template-columns: 1fr 1fr 80px 80px; gap: 8px; }
+
+/* Dynamic entries */
+.cv-entry {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 12px; margin-bottom: 8px;
+  position: relative;
+}
+.cv-entry-remove {
+  position: absolute; top: 8px; right: 8px;
+  background: none; border: none; color: var(--dim);
+  cursor: pointer; font-size: .9rem; line-height: 1; padding: 2px 5px;
+}
+.cv-entry-remove:hover { color: var(--red); }
+.cv-add-btn {
+  background: none; border: 1px dashed var(--border);
+  border-radius: 5px; color: var(--dim);
+  font-size: .75rem; font-family: var(--mono);
+  padding: 6px 14px; cursor: pointer; width: 100%;
+  margin-top: 6px; transition: border-color .15s, color .15s;
+}
+.cv-add-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* Public toggle */
+.cv-public-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 12px;
+}
+.cv-public-row label { font-size: .82rem; color: var(--text); flex: 1; cursor: pointer; }
+.cv-public-row small { font-size: .7rem; color: var(--dim); display: block; }
+
+/* Submit */
+.cv-submit {
+  background: var(--cyan); color: #000; border: none;
+  border-radius: 5px; padding: 10px 24px; font-size: .85rem;
+  font-weight: 700; cursor: pointer; transition: opacity .15s;
+}
+.cv-submit:hover { opacity: .85; }
+.cv-cancel {
+  background: none; border: 1px solid var(--border); border-radius: 5px;
+  color: var(--dim); padding: 10px 18px; font-size: .85rem;
+  cursor: pointer; text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.cv-cancel:hover { color: var(--text); border-color: var(--border2); }
+
+/* skill input hint */
+.cv-hint { font-size: .65rem; color: var(--dim); margin-top: 3px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cv-edit-wrap">
+
+  <div class="cv-edit-header">
+    <h1>Edit Profile</h1>
+    <a class="cv-preview-link" href="/cv">preview →</a>
+  </div>
+
+  <form method="post" action="/cv/edit">
+
+    <!-- Visibility -->
+    <div class="cv-fieldset">
+      <div class="cv-public-row">
+        <div>
+          <label for="pub-toggle">Make profile public</label>
+          <small>Anyone with the link can view your profile</small>
+        </div>
+        <input type="checkbox" id="pub-toggle" name="public" {% if cv.public %}checked{% endif %}
+               style="width:18px;height:18px;accent-color:var(--cyan);cursor:pointer;">
+      </div>
+
+      <!-- Basics -->
+      <div class="cv-field">
+        <label>headline</label>
+        <input type="text" name="headline" value="{{ cv.headline }}" placeholder="e.g. Software Engineer · ATProto hacker">
+      </div>
+      <div class="cv-row">
+        <div class="cv-field" style="margin-bottom:0;">
+          <label>location</label>
+          <input type="text" name="location" value="{{ cv.location }}" placeholder="Malta, EU">
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="cv-fieldset">
+      <div class="cv-fieldset-legend">about</div>
+      <div class="cv-field" style="margin-bottom:0;">
+        <textarea name="summary" placeholder="A few sentences about who you are and what you build…">{{ cv.summary }}</textarea>
+      </div>
+    </div>
+
+    <!-- Skills -->
+    <div class="cv-fieldset">
+      <div class="cv-fieldset-legend">skills</div>
+      <div class="cv-field" style="margin-bottom:0;">
+        <input type="text" name="skills"
+               value="{{ cv.skills | join(', ') }}"
+               placeholder="Python, ATProto, aiohttp, SQLite…">
+        <div class="cv-hint">comma-separated</div>
+      </div>
+    </div>
+
+    <!-- Links -->
+    <div class="cv-fieldset">
+      <div class="cv-fieldset-legend">links</div>
+      <div id="links-container">
+        {% for lnk in cv.links %}
+        <div class="cv-entry">
+          <button type="button" class="cv-entry-remove" onclick="this.closest('.cv-entry').remove()">✕</button>
+          <div class="cv-row">
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>label</label>
+              <input type="text" name="link_label" value="{{ lnk.label }}" placeholder="GitHub">
+            </div>
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>url</label>
+              <input type="text" name="link_url" value="{{ lnk.url }}" placeholder="https://…">
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="cv-add-btn" onclick="addEntry('links-container', linkTpl)">+ add link</button>
+    </div>
+
+    <!-- Experience -->
+    <div class="cv-fieldset">
+      <div class="cv-fieldset-legend">experience</div>
+      <div id="exp-container">
+        {% for e in cv.experience %}
+        <div class="cv-entry">
+          <button type="button" class="cv-entry-remove" onclick="this.closest('.cv-entry').remove()">✕</button>
+          <div class="cv-row" style="margin-bottom:8px;">
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>role</label>
+              <input type="text" name="exp_role" value="{{ e.role }}" placeholder="Software Engineer">
+            </div>
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>company</label>
+              <input type="text" name="exp_company" value="{{ e.company }}" placeholder="Acme Corp">
+            </div>
+          </div>
+          <div class="cv-row" style="margin-bottom:8px;">
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>from</label>
+              <input type="text" name="exp_from" value="{{ e.from_ }}" placeholder="2022">
+            </div>
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>to</label>
+              <input type="text" name="exp_to" value="{{ e.to }}" placeholder="present">
+            </div>
+          </div>
+          <div class="cv-field" style="margin-bottom:0;">
+            <label>description</label>
+            <textarea name="exp_desc" placeholder="What you built, your impact…" style="min-height:60px;">{{ e.desc }}</textarea>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="cv-add-btn" onclick="addEntry('exp-container', expTpl)">+ add experience</button>
+    </div>
+
+    <!-- Projects -->
+    <div class="cv-fieldset">
+      <div class="cv-fieldset-legend">projects</div>
+      <div id="proj-container">
+        {% for p in cv.projects %}
+        <div class="cv-entry">
+          <button type="button" class="cv-entry-remove" onclick="this.closest('.cv-entry').remove()">✕</button>
+          <div class="cv-field">
+            <label>name</label>
+            <input type="text" name="proj_name" value="{{ p.name }}" placeholder="mypds">
+          </div>
+          <div class="cv-field">
+            <label>description</label>
+            <input type="text" name="proj_desc" value="{{ p.desc }}" placeholder="What it does">
+          </div>
+          <div class="cv-field" style="margin-bottom:0;">
+            <label>url</label>
+            <input type="text" name="proj_url" value="{{ p.url }}" placeholder="https://…">
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="cv-add-btn" onclick="addEntry('proj-container', projTpl)">+ add project</button>
+    </div>
+
+    <!-- Education -->
+    <div class="cv-fieldset">
+      <div class="cv-fieldset-legend">education</div>
+      <div id="edu-container">
+        {% for e in cv.education %}
+        <div class="cv-entry">
+          <button type="button" class="cv-entry-remove" onclick="this.closest('.cv-entry').remove()">✕</button>
+          <div class="cv-row" style="margin-bottom:8px;">
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>degree</label>
+              <input type="text" name="edu_degree" value="{{ e.degree }}" placeholder="BSc Computer Science">
+            </div>
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>school</label>
+              <input type="text" name="edu_school" value="{{ e.school }}" placeholder="University of Malta">
+            </div>
+          </div>
+          <div class="cv-row">
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>from</label>
+              <input type="text" name="edu_from" value="{{ e.from_ }}" placeholder="2016">
+            </div>
+            <div class="cv-field" style="margin-bottom:0;">
+              <label>to</label>
+              <input type="text" name="edu_to" value="{{ e.to }}" placeholder="2020">
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="cv-add-btn" onclick="addEntry('edu-container', eduTpl)">+ add education</button>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:24px;">
+      <button class="cv-submit" type="submit" style="cursor:pointer;">save profile</button>
+      <a class="cv-cancel" href="/cv">cancel</a>
+    </div>
+
+  </form>
+</div>
+
+<script>
+const linkTpl = `<div class="cv-entry">
+  <button type="button" class="cv-entry-remove" onclick="this.closest('.cv-entry').remove()">✕</button>
+  <div class="cv-row">
+    <div class="cv-field" style="margin-bottom:0;"><label>label</label><input type="text" name="link_label" placeholder="GitHub"></div>
+    <div class="cv-field" style="margin-bottom:0;"><label>url</label><input type="text" name="link_url" placeholder="https://…"></div>
+  </div></div>`;
+
+const expTpl = `<div class="cv-entry">
+  <button type="button" class="cv-entry-remove" onclick="this.closest('.cv-entry').remove()">✕</button>
+  <div class="cv-row" style="margin-bottom:8px;">
+    <div class="cv-field" style="margin-bottom:0;"><label>role</label><input type="text" name="exp_role" placeholder="Software Engineer"></div>
+    <div class="cv-field" style="margin-bottom:0;"><label>company</label><input type="text" name="exp_company" placeholder="Acme Corp"></div>
+  </div>
+  <div class="cv-row" style="margin-bottom:8px;">
+    <div class="cv-field" style="margin-bottom:0;"><label>from</label><input type="text" name="exp_from" placeholder="2022"></div>
+    <div class="cv-field" style="margin-bottom:0;"><label>to</label><input type="text" name="exp_to" placeholder="present"></div>
+  </div>
+  <div class="cv-field" style="margin-bottom:0;"><label>description</label><textarea name="exp_desc" style="min-height:60px;"></textarea></div>
+</div>`;
+
+const projTpl = `<div class="cv-entry">
+  <button type="button" class="cv-entry-remove" onclick="this.closest('.cv-entry').remove()">✕</button>
+  <div class="cv-field"><label>name</label><input type="text" name="proj_name" placeholder="mypds"></div>
+  <div class="cv-field"><label>description</label><input type="text" name="proj_desc" placeholder="What it does"></div>
+  <div class="cv-field" style="margin-bottom:0;"><label>url</label><input type="text" name="proj_url" placeholder="https://…"></div>
+</div>`;
+
+const eduTpl = `<div class="cv-entry">
+  <button type="button" class="cv-entry-remove" onclick="this.closest('.cv-entry').remove()">✕</button>
+  <div class="cv-row" style="margin-bottom:8px;">
+    <div class="cv-field" style="margin-bottom:0;"><label>degree</label><input type="text" name="edu_degree" placeholder="BSc Computer Science"></div>
+    <div class="cv-field" style="margin-bottom:0;"><label>school</label><input type="text" name="edu_school" placeholder="University of Malta"></div>
+  </div>
+  <div class="cv-row">
+    <div class="cv-field" style="margin-bottom:0;"><label>from</label><input type="text" name="edu_from" placeholder="2016"></div>
+    <div class="cv-field" style="margin-bottom:0;"><label>to</label><input type="text" name="edu_to" placeholder="2020"></div>
+  </div>
+</div>`;
+
+function addEntry(containerId, tpl) {
+  const el = document.createElement('div');
+  el.innerHTML = tpl;
+  document.getElementById(containerId).appendChild(el.firstElementChild);
+}
+</script>
+{% endblock %}

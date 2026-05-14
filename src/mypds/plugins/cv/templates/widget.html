@@ -1,0 +1,22 @@
+{% if apps.cv and cv_widget %}
+<div class="panel" style="border-left: 2px solid var(--cyan);">
+  <div class="panel__title"><a href="/cv" style="color:inherit;">profile</a></div>
+  {% if cv_widget.headline %}
+  <div style="font-size:.8rem; color:var(--dim); margin-bottom:6px;">{{ cv_widget.headline }}</div>
+  {% endif %}
+  {% if cv_widget.summary %}
+  <div style="font-size:.78rem; color:var(--muted); line-height:1.55; margin-bottom:8px;">
+    {{ cv_widget.summary[:160] }}{% if cv_widget.summary|length > 160 %}…{% endif %}
+  </div>
+  {% endif %}
+  {% if cv_widget.skills %}
+  <div style="display:flex; flex-wrap:wrap; gap:4px;">
+    {% for s in cv_widget.skills[:6] %}
+    <span style="font-size:.65rem; font-family:var(--mono); color:var(--cyan);
+                 border:1px solid color-mix(in srgb,var(--cyan) 30%,transparent);
+                 border-radius:3px; padding:1px 6px;">{{ s }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}

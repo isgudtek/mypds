@@ -112,6 +112,9 @@
       </div>
       {% endif %}
 
+      {# plugin sidebar widgets #}
+      {% for pname in plugin_names %}{% include "plugin/" + pname + "/widget.html" ignore missing %}{% endfor %}
+
       <div class="panel">
         <div class="panel__title">node info</div>
         <div style="font-size:.75rem; font-family:var(--mono); color:var(--muted); line-height:2;">
