@@ -18,7 +18,7 @@ from aiohttp import web
 
 from mypds import static_config
 from mypds.app_util import get_db, get_client
-from mypds.web import get_session, render, get_web_store
+from mypds.web import get_session, render
 from mypds.web_store import MEDIA_DIR
 
 _DB_PATH = static_config.DATA_DIR + "/plugins/portal.sqlite3"
@@ -49,10 +49,6 @@ _ALLOWED_IMG = {
 
 # room_did -> [asyncio.Queue, ...]
 _streams: dict = {}
-
-
-def _active(ws) -> bool:
-    return ws.get_app_enabled("portal")
 
 
 def _ensure_tables():
@@ -182,9 +178,6 @@ async def _broadcast(room_did: str, payload: dict) -> None:
 
 @routes.get("/portal")
 async def portal_index(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     _ensure_tables()
     session = get_session(request)
     visitor_did = _get_visitor_did(request)
@@ -205,17 +198,11 @@ async def portal_index(request: web.Request):
 
 @routes.get("/portal/enter")
 async def portal_enter(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     return render(request, "plugin/portal/enter.html", {"error": None})
 
 
 @routes.post("/portal/enter")
 async def portal_enter_post(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     _ensure_tables()
     data = await request.post()
     handle = data.get("handle", "").strip()
@@ -250,9 +237,6 @@ async def portal_enter_post(request: web.Request):
 
 @routes.get("/portal/verify/{did:.*}")
 async def portal_verify(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     _ensure_tables()
     did = request.match_info["did"]
     row = _get_con().execute(
@@ -270,9 +254,6 @@ async def portal_verify(request: web.Request):
 
 @routes.post("/portal/verify/{did:.*}")
 async def portal_verify_post(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     _ensure_tables()
     did = request.match_info["did"]
     logger.info(f"portal: verify_post did={did!r}")
@@ -321,9 +302,6 @@ async def portal_verify_post(request: web.Request):
 # SSE stream — must be registered before the generic GET /portal/room/{did:.*}
 @routes.get("/portal/room/{did:.*}/stream")
 async def portal_room_stream(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     room_did = request.match_info["did"]
     session = get_session(request)
     visitor_did = _get_visitor_did(request)
@@ -359,9 +337,6 @@ async def portal_room_stream(request: web.Request):
 
 @routes.get("/portal/room/{did:.*}")
 async def portal_room(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     _ensure_tables()
     room_did = request.match_info["did"]
     session = get_session(request)
@@ -409,9 +384,6 @@ async def portal_room(request: web.Request):
 
 @routes.post("/portal/room/{did:.*}/kick")
 async def portal_kick(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     _ensure_tables()
     session = get_session(request)
     if not session:
@@ -431,9 +403,6 @@ async def portal_kick(request: web.Request):
 
 @routes.post("/portal/room/{did:.*}/drop")
 async def portal_drop(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     _ensure_tables()
     room_did = request.match_info["did"]
     session = get_session(request)
@@ -489,9 +458,6 @@ async def portal_drop(request: web.Request):
 
 @routes.get("/portal/img/{filename:[^/]+}")
 async def portal_img(request: web.Request):
-    ws = get_web_store(request)
-    if not _active(ws):
-        raise web.HTTPNotFound()
     filename = request.match_info["filename"]
     session = get_session(request)
     visitor_did = _get_visitor_did(request)
@@ -502,3 +468,8 @@ async def portal_img(request: web.Request):
         raise web.HTTPNotFound()
     mime, _ = mimetypes.guess_type(filename)
     return web.FileResponse(path, headers={"Content-Type": mime or "application/octet-stream"})
+
+
+if __name__ == "__main__":
+    from mypds.plugin_runner import run_plugin
+    run_plugin(routes, APP_NAME)

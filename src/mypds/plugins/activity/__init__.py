@@ -139,3 +139,8 @@ async def activity_page(request: web.Request):
         "stats": stats,
         "handle": profile.get("handle", ""),
     })
+
+
+if __name__ == "__main__":
+    from mypds.plugin_runner import run_plugin
+    run_plugin(routes, APP_NAME)

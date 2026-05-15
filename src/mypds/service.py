@@ -755,6 +755,11 @@ def construct_app(
 	jinja_env.filters['timestamp'] = _timestamp_filter
 	jinja_env.filters['tojson'] = lambda v: __import__('json').dumps(v, ensure_ascii=False)
 
+	from .plugin_runner import PluginManager, proxy_to_plugin
+	from .web import MYPDS_PLUGIN_MANAGER
+
+	plugin_manager = PluginManager()
+
 	app = web.Application(middlewares=[cors_error_middleware, cors, defense_mode_middleware, atproto_service_proxy_middleware])
 	app[MILLIPDS_DB] = db
 	app[MILLIPDS_AIOHTTP_CLIENT] = client
@@ -764,6 +769,7 @@ def construct_app(
 	app[MILLIPDS_JINJA_ENV] = jinja_env
 	app[MILLIPDS_WEB_STORE] = WebStore()
 	app[MYPDS_PLUGINS] = list(plugins.keys())
+	app[MYPDS_PLUGIN_MANAGER] = plugin_manager
 
 	# Static file serving
 	static_dir = Path(__file__).parent / "static"
@@ -772,9 +778,28 @@ def construct_app(
 	# Web UI routes (registered before ATProto routes so / is ours)
 	app.add_routes(web_routes)
 
-	# Plugin routes
-	for plugin_mod in plugins.values():
-		app.add_routes(plugin_mod.routes)
+	# Plugin routes — proxy each enabled plugin to its subprocess
+	ws_for_startup = WebStore()
+	for app_name, plugin_mod in plugins.items():
+		prefix = getattr(plugin_mod, "URL_PREFIX", f"/{app_name}")
+
+		# Capture app_name for closure
+		def make_handler(name):
+			async def handler(request: web.Request):
+				return await proxy_to_plugin(request, name)
+			return handler
+
+		handler = make_handler(app_name)
+		app.router.add_route("*", prefix, handler)
+		app.router.add_route("*", f"{prefix}/{{rest:.*}}", handler)
+
+		if ws_for_startup.get_app_enabled(app_name):
+			plugin_manager.start(app_name)
+
+	async def shutdown_plugins(a):
+		plugin_manager.stop_all()
+
+	app.on_cleanup.append(shutdown_plugins)
 
 	# ATProto protocol routes
 	app.add_routes(routes)

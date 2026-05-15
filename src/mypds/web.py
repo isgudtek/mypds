@@ -29,6 +29,7 @@ web_routes = web.RouteTableDef()
 
 MILLIPDS_WEB_STORE = web.AppKey("MILLIPDS_WEB_STORE", WebStore)
 MYPDS_PLUGINS = web.AppKey("MYPDS_PLUGINS", list)  # list of loaded plugin app names
+MYPDS_PLUGIN_MANAGER = web.AppKey("MYPDS_PLUGIN_MANAGER")  # PluginManager instance
 
 COOKIE_NAME = "mpds_sid"
 NODE_CSP = (
@@ -1454,7 +1455,14 @@ async def app_toggle(request: web.Request):
 	ws = get_web_store(request)
 	if app_name in ws.KNOWN_APPS and app_name != "compose":
 		current = ws.get_app_enabled(app_name)
-		ws.set_app_enabled(app_name, not current)
+		enabling = not current
+		ws.set_app_enabled(app_name, enabling)
+		manager = request.app.get(MYPDS_PLUGIN_MANAGER)
+		if manager:
+			if enabling:
+				manager.start(app_name)
+			else:
+				manager.stop(app_name)
 	raise web.HTTPFound("/dashboard")
 
 

@@ -52,9 +52,6 @@ def _get_events(db, did: str) -> dict:
 
 @routes.get("/planner")
 async def planner_page(request: web.Request):
-    ws = get_web_store(request)
-    if not ws.get_app_enabled(APP_NAME):
-        raise web.HTTPNotFound()
     db = get_db(request)
     profile = get_node_profile(db)
     events = _get_events(db, profile["did"]) if profile["did"] else {d: [] for d in DAYS}
@@ -132,3 +129,8 @@ async def planner_delete(request: web.Request):
     res, seq, fbytes = repo_ops.apply_writes(db, session["did"], [write], None)
     await atproto_repo.firehose_broadcast(request, (seq, fbytes))
     raise web.HTTPFound("/planner")
+
+
+if __name__ == "__main__":
+    from mypds.plugin_runner import run_plugin
+    run_plugin(routes, APP_NAME)

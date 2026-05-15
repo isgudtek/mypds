@@ -196,3 +196,8 @@ async def cv_edit_post(request: web.Request):
     post = await request.post()
     _save(ws, _parse_form(post))
     raise web.HTTPFound("/cv")
+
+
+if __name__ == "__main__":
+    from mypds.plugin_runner import run_plugin
+    run_plugin(routes, APP_NAME)

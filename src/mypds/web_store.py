@@ -25,6 +25,7 @@ class WebStore:
 		Path(MEDIA_DIR).mkdir(parents=True, exist_ok=True)
 		self.con = sqlite3.connect(db_path, check_same_thread=False)
 		self.con.row_factory = sqlite3.Row
+		self.con.execute("PRAGMA journal_mode=WAL")
 		self._init_tables()
 
 	def _migrate(self):

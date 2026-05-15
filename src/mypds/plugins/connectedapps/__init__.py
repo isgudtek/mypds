@@ -6,8 +6,9 @@ import json
 from mypds.app_util import get_db
 from mypds.web import render, get_session, get_web_store, get_node_profile
 
-APP_NAME = "connectedapps"
-NSID     = None  # no ATProto records — internal tracking only
+APP_NAME   = "connectedapps"
+NSID       = None  # no ATProto records — internal tracking only
+URL_PREFIX = "/connected-apps"
 
 routes = web.RouteTableDef()
 
@@ -165,3 +166,8 @@ async def connected_app_detail(request: web.Request):
         "record_nsids": record_nsids,
         "timeline": timeline,
     })
+
+
+if __name__ == "__main__":
+    from mypds.plugin_runner import run_plugin
+    run_plugin(routes, APP_NAME)

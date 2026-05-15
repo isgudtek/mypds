@@ -6,8 +6,9 @@ import json
 from mypds.app_util import get_db
 from mypds.web import render, get_session, get_web_store, get_node_profile
 
-APP_NAME = "repobrowser"
-NSID     = None  # read-only browser, no records written
+APP_NAME   = "repobrowser"
+NSID       = None  # read-only browser, no records written
+URL_PREFIX = "/repo-browser"
 
 routes = web.RouteTableDef()
 
@@ -226,3 +227,8 @@ async def repobrowser_collection(request: web.Request):
         "domain": domain,
         "client_url": source.get("client_url") if source else None,
     })
+
+
+if __name__ == "__main__":
+    from mypds.plugin_runner import run_plugin
+    run_plugin(routes, APP_NAME)
