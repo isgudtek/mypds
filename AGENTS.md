@@ -4,62 +4,60 @@ This file is for AI agents. Follow it top-to-bottom to go from zero to a live, f
 
 ---
 
-## THIS INSTANCE — mypds.mycrab.space restart runbook
+## Restarting a running instance
 
-**Two separate processes must both be running.** If the site shows Cloudflare error 1033, one of them is dead.
+**Two separate processes must both be running** when deployed via Cloudflare Tunnel. Error 1033 = one is dead. 502 = server dead, tunnel alive.
 
-### Check status
+### Step 1 — find the config
+
 ```bash
-# Is the Python server up?
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3030/
-# Expected: 200. Anything else (or connection refused) = server dead.
+# Where is the repo checked out?
+find / -name "mypds" -path "*/plugins/*" 2>/dev/null | head -1
+# or just ask the user / check git log
 
-# Is the tunnel up?
-ps aux | grep "27446145" | grep -v grep
-# No output = tunnel dead.
+# What port is it using?
+ss -tlnp | grep python  # look for the listen port
+
+# Where is the cloudflared config?
+ls ~/.cloudflared/*.yml   # or /root/.cloudflared/
+grep -l "mypds\|<hostname>" ~/.cloudflared/*.yml
+
+# What tunnel ID?
+grep "^tunnel:" ~/.cloudflared/<config>.yml
 ```
 
-### Restart Python server
+### Step 2 — restart the Python server
+
 ```bash
-# Kill everything (orphaned plugin subprocesses too)
+WORK_DIR=<repo working directory>   # e.g. /home/user/mypds
+PORT=<listen port>                  # e.g. 3030
+
+# Kill server + orphaned plugin subprocesses
 ps aux | grep "mypds\|plugin_runner" | grep -v grep | awk '{print $2}' | xargs -r kill -9
 
-# Remove stale Unix sockets
-rm -f /home/claude/mycrabs/millipds/data/plugins/*.sock
+# Remove stale Unix sockets left by dead plugins
+rm -f "$WORK_DIR/data/plugins/*.sock"
 
-# Start fresh
-cd /home/claude/mycrabs/millipds && python3 -m mypds run --listen_port=3030 >> /tmp/mypds.log 2>&1 &
+# Start
+cd "$WORK_DIR" && python3 -m mypds run --listen_port=$PORT >> /tmp/mypds.log 2>&1 &
 
-# Wait ~8s for all plugins to load, then verify
-sleep 8 && curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3030/
+# Wait for all plugins to load (~8s), then verify
+sleep 8 && curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/
+# Expected: 200
 ```
 
-### Restart Cloudflare tunnel
+### Step 3 — restart Cloudflare tunnel (if used)
+
 ```bash
-cloudflared tunnel --config /home/claude/.cloudflared/mypds.yml run 27446145-5516-4296-a10a-bf32cabd9afd >> /tmp/mypds-tunnel.log 2>&1 &
-sleep 3 && tail -3 /tmp/mypds-tunnel.log
+TUNNEL_CFG=<path to yml>    # e.g. ~/.cloudflared/mypds.yml
+TUNNEL_ID=<id from yml>     # grep "^tunnel:" $TUNNEL_CFG
+
+cloudflared tunnel --config "$TUNNEL_CFG" run "$TUNNEL_ID" >> /tmp/cf-tunnel.log 2>&1 &
+sleep 3 && tail -3 /tmp/cf-tunnel.log
 # Expected: "Registered tunnel connection" lines
 ```
 
-### Restart both (full reset)
-```bash
-ps aux | grep "mypds\|plugin_runner" | grep -v grep | awk '{print $2}' | xargs -r kill -9
-rm -f /home/claude/mycrabs/millipds/data/plugins/*.sock
-cd /home/claude/mycrabs/millipds && python3 -m mypds run --listen_port=3030 >> /tmp/mypds.log 2>&1 &
-sleep 8
-cloudflared tunnel --config /home/claude/.cloudflared/mypds.yml run 27446145-5516-4296-a10a-bf32cabd9afd >> /tmp/mypds-tunnel.log 2>&1 &
-sleep 3 && curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3030/
-```
-
-| Thing | Value |
-|-------|-------|
-| Working dir | `/home/claude/mycrabs/millipds` |
-| Port | `3030` |
-| Public URL | `https://mypds.mycrab.space` |
-| Server log | `/tmp/mypds.log` |
-| Tunnel config | `/home/claude/.cloudflared/mypds.yml` |
-| Tunnel ID | `27446145-5516-4296-a10a-bf32cabd9afd` |
-| Tunnel log | `/tmp/mypds-tunnel.log` |
+> **Note:** plugin subprocesses (activity, portal, etc.) are spawned automatically by the server — do not start them manually.
 
 ---
 
