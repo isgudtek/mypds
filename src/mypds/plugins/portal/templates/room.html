@@ -1,0 +1,426 @@
+{% extends "node_base.html" %}
+{% block title %}portal · @{{ visitor[1] }}{% endblock %}
+
+{% block head %}
+<style>
+.portal-room { max-width:660px; margin:0 auto; padding:28px 16px 110px; }
+
+.portal-identities {
+  display:grid; grid-template-columns:1fr 32px 1fr;
+  align-items:center; gap:6px; margin-bottom:24px;
+}
+.portal-id {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:12px 14px;
+  display:flex; align-items:center; gap:10px;
+}
+.portal-id--visitor { flex-direction:row-reverse; text-align:right; }
+.portal-id__avatar {
+  width:36px; height:36px; border-radius:50%; flex-shrink:0;
+  background:var(--surface2); overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+}
+.portal-id__avatar--owner { border:2px solid var(--cyan); }
+.portal-id__avatar--visitor { border:2px solid color-mix(in srgb,var(--cyan) 45%,transparent); }
+.portal-id__name { font-size:.82rem; font-weight:600; line-height:1.2; }
+.portal-id__role { font-size:.6rem; color:var(--dim); font-family:var(--mono); }
+
+.portal-connector {
+  text-align:center; font-size:.75rem; color:var(--dim); font-family:var(--mono);
+}
+
+.kick-btn {
+  display:inline-flex; align-items:center; gap:5px;
+  margin-top:6px; font-size:.6rem; font-family:var(--mono);
+  color:var(--dim); background:none; border:1px solid var(--border);
+  border-radius:4px; padding:3px 8px; cursor:pointer; transition:color .15s,border-color .15s;
+}
+.kick-btn:hover { color:#f87171; border-color:#f87171; }
+
+.drops-header {
+  font-size:.62rem; font-family:var(--mono); color:var(--dim);
+  text-transform:uppercase; letter-spacing:.08em;
+  border-bottom:1px solid var(--border); padding-bottom:10px; margin-bottom:16px;
+  display:flex; align-items:center; gap:8px;
+}
+.live-dot {
+  width:6px; height:6px; border-radius:50%; background:var(--cyan);
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.drop { display:flex; gap:9px; margin-bottom:12px; }
+.drop--mine { flex-direction:row-reverse; }
+
+.drop__avatar {
+  width:26px; height:26px; border-radius:50%; flex-shrink:0;
+  background:var(--surface2); overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  border:1px solid var(--border);
+}
+.drop__avatar--owner { border-color:var(--cyan); }
+
+.drop__bubble {
+  max-width:72%; background:var(--surface); border:1px solid var(--border);
+  padding:8px 12px; line-height:1.5;
+  border-radius:4px 12px 12px 12px;
+}
+.drop--mine .drop__bubble {
+  background:color-mix(in srgb,var(--cyan) 8%,var(--surface));
+  border-color:color-mix(in srgb,var(--cyan) 20%,transparent);
+  border-radius:12px 4px 12px 12px;
+}
+.drop__text { font-size:.82rem; color:var(--text); word-break:break-word; }
+.drop__img { max-width:100%; border-radius:6px; margin-top:6px; display:block; max-height:320px; object-fit:contain; }
+.drop__time { font-size:.6rem; color:var(--dim); font-family:var(--mono); margin-top:4px; }
+
+.portal-input {
+  position:fixed; bottom:0; left:0; right:0;
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(12px); border-top:1px solid var(--border);
+  padding:10px 16px; z-index:10;
+}
+.portal-input-inner {
+  max-width:660px; margin:0 auto; display:flex; flex-direction:column; gap:6px;
+}
+.portal-input-row { display:flex; gap:8px; align-items:center; }
+.portal-input input[type="text"] {
+  flex:1; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:9px 14px; color:var(--text);
+  font-size:.85rem; font-family:inherit; outline:none; transition:border-color .15s;
+}
+.portal-input input[type="text"]:focus { border-color:var(--cyan); }
+.portal-input button[type="submit"] {
+  background:var(--cyan); color:#000; border:none; border-radius:8px;
+  padding:9px 18px; font-size:.82rem; font-weight:700; cursor:pointer;
+  transition:opacity .15s; white-space:nowrap;
+}
+.portal-input button[type="submit"]:hover { opacity:.82; }
+
+.img-attach-label {
+  display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  font-size:.7rem; font-family:var(--mono); color:var(--dim);
+  border:1px solid var(--border); border-radius:6px; padding:5px 10px;
+  transition:color .15s,border-color .15s; white-space:nowrap;
+}
+.img-attach-label:hover { color:var(--cyan); border-color:var(--cyan); }
+.img-attach-label.has-file { color:var(--cyan); border-color:var(--cyan); }
+#img-input { display:none; }
+
+.img-preview-wrap {
+  display:none; position:relative; width:fit-content;
+}
+.img-preview-wrap.visible { display:block; }
+#img-preview { max-height:60px; max-width:120px; border-radius:4px; object-fit:cover; }
+.img-clear {
+  position:absolute; top:-6px; right:-6px; width:16px; height:16px;
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; font-size:9px; color:var(--dim);
+}
+.img-clear:hover { color:var(--text); }
+
+/* kicked overlay */
+.kicked-overlay {
+  display:none; position:fixed; inset:0; z-index:100;
+  background:color-mix(in srgb,var(--bg) 90%,transparent);
+  backdrop-filter:blur(8px);
+  align-items:center; justify-content:center; flex-direction:column; gap:12px;
+}
+.kicked-overlay.show { display:flex; }
+.kicked-card {
+  background:var(--surface); border:1px solid color-mix(in srgb,#f87171 30%,transparent);
+  border-radius:12px; padding:32px 40px; text-align:center; max-width:320px;
+}
+.kicked-card h2 { font-size:.95rem; font-weight:700; margin:0 0 8px; color:#f87171; }
+.kicked-card p { font-size:.78rem; color:var(--dim); margin:0 0 18px; line-height:1.5; }
+.kicked-card a {
+  font-size:.75rem; font-family:var(--mono); color:var(--dim);
+  text-decoration:none; border:1px solid var(--border);
+  border-radius:6px; padding:6px 14px; display:inline-block;
+}
+
+@media (prefers-reduced-motion:reduce) { * { animation:none!important; transition:none!important; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-room">
+
+  <!-- kicked overlay (hidden until SSE kicks) -->
+  <div class="kicked-overlay" id="kicked-overlay">
+    <div class="kicked-card">
+      <h2>access revoked</h2>
+      <p>the node owner has removed you from this portal</p>
+      <a href="/portal/enter">← back</a>
+    </div>
+  </div>
+
+  <!-- two identities -->
+  <div class="portal-identities">
+    <!-- owner -->
+    <div class="portal-id">
+      <div class="portal-id__avatar portal-id__avatar--owner">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="var(--cyan)" stroke-width="1.5" style="width:16px;height:16px;">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+      </div>
+      <div>
+        <div class="portal-id__name">@{{ owner_handle }}</div>
+        <div class="portal-id__role">node owner</div>
+      </div>
+    </div>
+
+    <div class="portal-connector">⇄</div>
+
+    <!-- visitor -->
+    <div class="portal-id portal-id--visitor">
+      <div class="portal-id__avatar portal-id__avatar--visitor">
+        {% if visitor[3] %}
+        <img src="{{ visitor[3] }}" style="width:100%;height:100%;object-fit:cover;">
+        {% else %}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="var(--dim)" stroke-width="1.5" style="width:16px;height:16px;">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+        {% endif %}
+      </div>
+      <div>
+        <div class="portal-id__name">@{{ visitor[1] }}</div>
+        <div class="portal-id__role">visitor</div>
+        {% if is_owner %}
+        <form method="post" action="/portal/room/{{ visitor[0] }}/kick"
+              onsubmit="return confirm('Remove @{{ visitor[1] }} from the portal?')">
+          <button type="submit" class="kick-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+            remove
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- drops section -->
+  <div class="drops-header">
+    <div class="live-dot" id="live-dot" title="live"></div>
+    <span id="drops-label">shared space · {{ drops|length }} drop{% if drops|length != 1 %}s{% endif %}</span>
+  </div>
+
+  {% if not drops %}
+  <div id="empty-msg" style="text-align:center;padding:40px 0;color:var(--dim);font-size:.8rem;line-height:1.6;">
+    nothing here yet<br>
+    <span style="font-size:.7rem;">leave the first drop ↓</span>
+  </div>
+  {% endif %}
+
+  <div id="drops">
+  {% for drop in drops %}
+  {% set is_mine = (drop[1] == viewer_did) %}
+  {% set is_owner_drop = (drop[1] == owner_did) %}
+  <div class="drop {% if is_mine %}drop--mine{% endif %}">
+    <div class="drop__avatar {% if is_owner_drop %}drop__avatar--owner{% endif %}">
+      {% if is_owner_drop %}
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="var(--cyan)" stroke-width="1.5" style="width:13px;height:13px;">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+      </svg>
+      {% elif visitor[3] %}
+      <img src="{{ visitor[3] }}" style="width:100%;height:100%;object-fit:cover;">
+      {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="var(--dim)" stroke-width="1.5" style="width:13px;height:13px;">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+      </svg>
+      {% endif %}
+    </div>
+    <div class="drop__bubble">
+      {% if drop[2] %}<div class="drop__text">{{ drop[2] }}</div>{% endif %}
+      {% if drop[4] %}<img class="drop__img" src="/portal/img/{{ drop[4] }}" alt="image drop">{% endif %}
+      <div class="drop__time">{{ drop[3][:16] }}</div>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+
+</div>
+
+<!-- sticky input -->
+<div class="portal-input" id="portal-input-bar">
+  <form class="portal-input-inner" id="drop-form"
+        method="post" action="/portal/room/{{ visitor[0] }}/drop"
+        enctype="multipart/form-data">
+    <div class="portal-input-row">
+      <input type="text" name="content" id="content-input"
+             placeholder="drop something…" maxlength="500" autocomplete="off">
+      <label class="img-attach-label" id="attach-label" for="img-input">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="m21 15-5-5L5 21"/>
+        </svg>
+        img
+      </label>
+      <input type="file" id="img-input" name="image" accept="image/jpeg,image/png,image/gif,image/webp">
+      <button type="submit">drop</button>
+    </div>
+    <div class="img-preview-wrap" id="img-preview-wrap">
+      <img id="img-preview" src="" alt="">
+      <div class="img-clear" id="img-clear">✕</div>
+    </div>
+  </form>
+</div>
+
+<script>
+(function() {
+  const roomDid   = {{ visitor[0] | tojson }};
+  const viewerDid = {{ viewer_did | tojson }};
+  const ownerDid  = {{ owner_did | tojson }};
+  const visitorAvatar = {{ (visitor[3] or '') | tojson }};
+  const isOwner   = {{ 'true' if is_owner else 'false' }};
+  let dropCount   = {{ drops|length }};
+
+  // ── scroll to bottom ──────────────────────────────────────────────────────
+  const dropsEl = document.getElementById('drops');
+  dropsEl.scrollIntoView({block: 'end'});
+
+  // ── image attach preview ──────────────────────────────────────────────────
+  const imgInput   = document.getElementById('img-input');
+  const imgPreview = document.getElementById('img-preview');
+  const previewWrap= document.getElementById('img-preview-wrap');
+  const attachLabel= document.getElementById('attach-label');
+  const imgClear   = document.getElementById('img-clear');
+
+  imgInput.addEventListener('change', function() {
+    if (this.files[0]) {
+      const url = URL.createObjectURL(this.files[0]);
+      imgPreview.src = url;
+      previewWrap.classList.add('visible');
+      attachLabel.classList.add('has-file');
+    }
+  });
+
+  imgClear.addEventListener('click', function() {
+    imgInput.value = '';
+    imgPreview.src = '';
+    previewWrap.classList.remove('visible');
+    attachLabel.classList.remove('has-file');
+  });
+
+  // ── build a drop element ──────────────────────────────────────────────────
+  function makeDropEl(d) {
+    const isMine      = d.author === viewerDid;
+    const isOwnerDrop = d.author === ownerDid;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'drop' + (isMine ? ' drop--mine' : '');
+
+    // avatar
+    const av = document.createElement('div');
+    av.className = 'drop__avatar' + (isOwnerDrop ? ' drop__avatar--owner' : '');
+    if (isOwnerDrop) {
+      av.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+        stroke="var(--cyan)" stroke-width="1.5" style="width:13px;height:13px;">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    } else if (visitorAvatar) {
+      const img = document.createElement('img');
+      img.src = visitorAvatar;
+      img.style = 'width:100%;height:100%;object-fit:cover;';
+      av.appendChild(img);
+    } else {
+      av.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+        stroke="var(--dim)" stroke-width="1.5" style="width:13px;height:13px;">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    }
+
+    // bubble
+    const bubble = document.createElement('div');
+    bubble.className = 'drop__bubble';
+    if (d.content) {
+      const txt = document.createElement('div');
+      txt.className = 'drop__text';
+      txt.textContent = d.content;
+      bubble.appendChild(txt);
+    }
+    if (d.image) {
+      const img = document.createElement('img');
+      img.className = 'drop__img';
+      img.src = d.image;
+      img.alt = 'image drop';
+      bubble.appendChild(img);
+    }
+    const time = document.createElement('div');
+    time.className = 'drop__time';
+    time.textContent = d.created_at;
+    bubble.appendChild(time);
+
+    wrap.appendChild(av);
+    wrap.appendChild(bubble);
+    return wrap;
+  }
+
+  // ── intercept form submit → fetch ─────────────────────────────────────────
+  const form = document.getElementById('drop-form');
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fd = new FormData(form);
+    try {
+      await fetch(form.action, {method: 'POST', body: fd});
+    } catch (_) {}
+    // clear inputs
+    document.getElementById('content-input').value = '';
+    imgInput.value = '';
+    imgPreview.src = '';
+    previewWrap.classList.remove('visible');
+    attachLabel.classList.remove('has-file');
+  });
+
+  // ── SSE ───────────────────────────────────────────────────────────────────
+  const liveDot = document.getElementById('live-dot');
+  const label   = document.getElementById('drops-label');
+
+  function updateLabel() {
+    label.textContent = `shared space · ${dropCount} drop${dropCount !== 1 ? 's' : ''}`;
+  }
+
+  function connect() {
+    const es = new EventSource(`/portal/room/${encodeURIComponent(roomDid)}/stream`);
+
+    es.onopen = function() {
+      liveDot.style.background = 'var(--cyan)';
+    };
+
+    es.onmessage = function(evt) {
+      let data;
+      try { data = JSON.parse(evt.data); } catch(_) { return; }
+
+      if (data.type === 'drop') {
+        const emptyMsg = document.getElementById('empty-msg');
+        if (emptyMsg) emptyMsg.remove();
+        const el = makeDropEl(data);
+        dropsEl.appendChild(el);
+        el.scrollIntoView({behavior: 'smooth', block: 'end'});
+        dropCount++;
+        updateLabel();
+      } else if (data.type === 'kicked' && !isOwner) {
+        es.close();
+        document.getElementById('kicked-overlay').classList.add('show');
+        document.getElementById('portal-input-bar').style.display = 'none';
+      }
+    };
+
+    es.onerror = function() {
+      liveDot.style.background = 'var(--dim)';
+      es.close();
+      setTimeout(connect, 4000);
+    };
+  }
+
+  connect();
+})();
+</script>
+{% endblock %}

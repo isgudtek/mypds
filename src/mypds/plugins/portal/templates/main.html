@@ -1,0 +1,91 @@
+{% extends "node_base.html" %}
+{% block title %}portal{% endblock %}
+
+{% block content %}
+<div style="max-width:600px;margin:0 auto;padding:32px 16px;">
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;">
+    <h1 style="font-size:1.1rem;font-weight:700;margin:0;">portal</h1>
+    <span style="font-size:.68rem;font-family:var(--mono);color:var(--dim);
+                 background:var(--surface);border:1px solid var(--border);
+                 border-radius:4px;padding:2px 7px;">
+      {{ visitors|length }} visitor{% if visitors|length != 1 %}s{% endif %}
+    </span>
+    <div style="margin-left:auto;">
+      <a href="/portal/enter" style="font-size:.72rem;color:var(--dim);font-family:var(--mono);
+                                      text-decoration:none;border:1px solid var(--border);
+                                      border-radius:4px;padding:4px 10px;transition:color .15s,border-color .15s;"
+         onmouseover="this.style.color='var(--cyan)';this.style.borderColor='var(--cyan)'"
+         onmouseout="this.style.color='var(--dim)';this.style.borderColor='var(--border)'">
+        share link →
+      </a>
+    </div>
+  </div>
+
+  {% if not visitors %}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;
+              padding:48px 24px;text-align:center;">
+    <div style="width:44px;height:44px;border-radius:50%;
+                background:color-mix(in srgb,var(--cyan) 10%,var(--surface2));
+                border:1px solid color-mix(in srgb,var(--cyan) 20%,transparent);
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+           fill="none" stroke="var(--cyan)" stroke-width="1.5">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+    </div>
+    <div style="font-size:.85rem;color:var(--text);margin-bottom:6px;">no visitors yet</div>
+    <div style="font-size:.72rem;color:var(--dim);margin-bottom:16px;">
+      share <code style="font-family:var(--mono);color:var(--cyan);">/portal/enter</code> with someone
+    </div>
+    <a href="/portal/enter" style="font-size:.75rem;color:var(--cyan);text-decoration:none;
+                                    font-family:var(--mono);">
+      try it yourself →
+    </a>
+  </div>
+
+  {% else %}
+
+  <div style="display:flex;flex-direction:column;gap:6px;">
+  {% for v in visitors %}
+  <a href="/portal/room/{{ v[0] }}" style="text-decoration:none;color:inherit;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;
+                padding:13px 16px;display:flex;align-items:center;gap:12px;
+                transition:border-color .15s;"
+         onmouseover="this.style.borderColor='var(--cyan)'"
+         onmouseout="this.style.borderColor='var(--border)'">
+      {% if v[3] %}
+      <img src="{{ v[3] }}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+      {% else %}
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--surface2);flex-shrink:0;
+                  display:flex;align-items:center;justify-content:center;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+             fill="none" stroke="var(--dim)" stroke-width="1.5">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+      </div>
+      {% endif %}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          {{ v[2] or ("@" + v[1]) }}
+        </div>
+        <div style="font-size:.68rem;color:var(--dim);font-family:var(--mono);">@{{ v[1] }}</div>
+      </div>
+      <div style="font-size:.62rem;color:var(--dim);font-family:var(--mono);white-space:nowrap;">
+        {{ v[4][:10] if v[4] else '' }}
+      </div>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+           fill="none" stroke="var(--dim)" stroke-width="1.5">
+        <path d="M5 12h14M12 5l7 7-7 7"/>
+      </svg>
+    </div>
+  </a>
+  {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

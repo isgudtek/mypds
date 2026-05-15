@@ -1,0 +1,93 @@
+{% extends "node_base.html" %}
+{% block title %}portal · verify{% endblock %}
+
+{% block content %}
+<div style="min-height:65vh;display:flex;align-items:center;justify-content:center;padding:40px 16px;">
+  <div style="width:100%;max-width:460px;">
+
+    <!-- visitor identity pill -->
+    <div style="display:flex;align-items:center;gap:12px;
+                background:var(--surface);border:1px solid var(--border);border-radius:8px;
+                padding:12px 16px;margin-bottom:28px;">
+      {% if avatar %}
+      <img src="{{ avatar }}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+      {% else %}
+      <div style="width:38px;height:38px;border-radius:50%;background:var(--surface2);flex-shrink:0;
+                  display:flex;align-items:center;justify-content:center;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+             fill="none" stroke="var(--dim)" stroke-width="1.5">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+      </div>
+      {% endif %}
+      <div>
+        <div style="font-size:.85rem;font-weight:600;">{{ display_name or ("@" + handle) }}</div>
+        <div style="font-size:.68rem;color:var(--dim);font-family:var(--mono);">@{{ handle }}</div>
+      </div>
+      <div style="margin-left:auto;font-size:.65rem;color:var(--dim);font-family:var(--mono);">not you? <a href="/portal/enter" style="color:var(--cyan);">change</a></div>
+    </div>
+
+    <h1 style="font-size:1.05rem;font-weight:700;margin:0 0 6px;">post this on bluesky</h1>
+    <p style="font-size:.78rem;color:var(--dim);margin:0 0 18px;line-height:1.55;">
+      post this exact text as a bluesky post to prove you control this account.
+      you can delete it right after.
+    </p>
+
+    <!-- nonce box -->
+    <div style="position:relative;background:var(--surface);border:1px solid var(--border);
+                border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+      <div style="font-family:var(--mono);font-size:.95rem;color:var(--cyan);
+                  user-select:all;cursor:text;padding-right:60px;line-height:1.5;">
+        🔑 {{ host }} {{ nonce }}
+      </div>
+      <button id="copy-btn" onclick="copyNonce()"
+              style="position:absolute;top:50%;right:14px;transform:translateY(-50%);
+                     background:none;border:1px solid var(--border);border-radius:4px;
+                     color:var(--dim);font-size:.65rem;font-family:var(--mono);
+                     padding:4px 10px;cursor:pointer;transition:color .15s,border-color .15s;"
+              onmouseover="this.style.color='var(--cyan)';this.style.borderColor='var(--cyan)'"
+              onmouseout="this.style.color='var(--dim)';this.style.borderColor='var(--border)'">
+        copy
+      </button>
+    </div>
+
+    {% if error %}
+    <div style="background:color-mix(in srgb,var(--red) 12%,transparent);
+                border:1px solid color-mix(in srgb,var(--red) 25%,transparent);
+                border-radius:6px;padding:9px 14px;font-size:.78rem;color:var(--red);margin-bottom:16px;">
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/portal/verify/{{ did }}">
+      <button type="submit"
+              style="width:100%;background:var(--cyan);color:#000;border:none;border-radius:5px;
+                     padding:11px;font-size:.85rem;font-weight:700;cursor:pointer;transition:opacity .15s;"
+              onmouseover="this.style.opacity='.82'" onmouseout="this.style.opacity='1'">
+        i've posted it →
+      </button>
+    </form>
+
+    <p style="text-align:center;font-size:.68rem;color:var(--dim);margin-top:12px;">
+      expires in ~10 min · <a href="/portal/enter" style="color:var(--dim);">start over</a>
+    </p>
+
+  </div>
+</div>
+
+<script>
+function copyNonce() {
+  navigator.clipboard.writeText("🔑 {{ host }} {{ nonce }}").then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'copied!';
+    btn.style.color = 'var(--cyan)';
+    btn.style.borderColor = 'var(--cyan)';
+    setTimeout(() => {
+      btn.textContent = 'copy';
+      btn.style.color = 'var(--dim)';
+      btn.style.borderColor = 'var(--border)';
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

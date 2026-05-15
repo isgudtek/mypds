@@ -183,7 +183,9 @@ def apply_writes(
 							text="record already exists"
 						)
 				swap_record = op.get("swapRecord")
-				if swap_record is not None:  # only applies to #update
+				# swapRecord check only applies when the record already exists locally;
+				# if prev_cid is None the record is new to us (putRecord upsert semantics)
+				if swap_record is not None and prev_cid is not None:
 					if cbrrr.CID.decode(swap_record) != prev_cid:
 						raise aiohttp.web.HTTPBadRequest(
 							text="swapRecord did not match"
@@ -449,8 +451,8 @@ def blob_incref(con: apsw.Connection, user_id: int, ref: cbrrr.CID, tid: str):
 	if changes == 1:
 		return  # happy path
 
-	if changes == 0:  # could happen if e.g. user didn't upload blob first
-		raise ValueError("tried to incref a blob that doesn't exist")
+	if changes == 0:  # blob not in local store (e.g. uploaded to a different PDS) — skip
+		return
 
 	# changes > 1 (should be impossible given UNIQUE constraints)
 	raise ValueError("welp, that's not supposed to happen")
@@ -462,7 +464,7 @@ def blob_decref(con: apsw.Connection, user_id: int, ref: cbrrr.CID):
 		(user_id, bytes(ref)),
 	).get:
 		case None:
-			raise ValueError("blob not found for decref")
+			return  # blob not in local store (external blob, never incref'd here) — skip
 		case (blob_id, refcount):
 			assert con.changes() == 1
 			assert refcount >= 0
