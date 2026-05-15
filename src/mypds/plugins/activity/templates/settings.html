@@ -1,0 +1,40 @@
+{% extends "node_base.html" %}
+{% block title %}activity · settings{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:60px; max-width:520px;">
+
+  <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:28px;">
+    <h1 style="font-size:1.2rem; font-weight:700; margin:0;">activity</h1>
+    <span style="font-size:.75rem; color:var(--dim); font-family:var(--mono);">settings</span>
+    <a href="/activity" style="margin-left:auto; font-size:.75rem; color:var(--dim); text-decoration:none;">← back</a>
+  </div>
+
+  {% if saved %}
+  <div style="background:color-mix(in srgb,var(--cyan) 12%,transparent); border:1px solid var(--cyan); border-radius:var(--r); padding:10px 14px; font-size:.8rem; color:var(--cyan); margin-bottom:20px;">
+    Settings saved.
+  </div>
+  {% endif %}
+
+  <form method="post" action="/activity/settings">
+    <div class="panel" style="margin-bottom:20px;">
+      <div class="panel__title">visibility</div>
+
+      <label style="display:flex; align-items:flex-start; gap:12px; padding:14px 0; cursor:pointer;">
+        <input type="checkbox" name="public_page" {% if public_page %}checked{% endif %}
+               style="margin-top:3px; accent-color:var(--cyan); cursor:pointer;">
+        <div>
+          <div style="font-size:.85rem; font-weight:600; color:var(--text); margin-bottom:3px;">Public activity page</div>
+          <div style="font-size:.75rem; color:var(--dim); line-height:1.5;">
+            When enabled, <code>/activity</code> is accessible without login and a link appears in the site navigation.
+            When disabled, only you can see it.
+          </div>
+        </div>
+      </label>
+    </div>
+
+    <button type="submit" class="btn btn--primary" style="cursor:pointer;">Save settings</button>
+  </form>
+
+</div>
+{% endblock %}

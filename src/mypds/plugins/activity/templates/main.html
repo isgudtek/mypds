@@ -53,37 +53,29 @@
 }
 .act-month-row {
   display: flex;
-  gap: 3px;
-  margin-bottom: 4px;
-  padding-left: 28px; /* align with day-label offset */
+  gap: 2px;
+  margin-bottom: 3px;
+  padding-left: 26px;
 }
 .act-month-label {
-  font-size: .62rem; color: var(--dim); font-family: var(--mono);
-  width: 13px; text-align: left;
-  white-space: nowrap;
-  overflow: visible;
+  font-size: .58rem; color: var(--dim); font-family: var(--mono);
+  width: 12px; text-align: left;
+  white-space: nowrap; overflow: visible;
 }
-.act-rows {
-  display: flex; gap: 0;
-}
+.act-rows { display: flex; gap: 0; }
 .act-day-labels {
-  display: flex; flex-direction: column; gap: 3px;
-  margin-right: 6px;
-  padding-top: 1px;
+  display: flex; flex-direction: column; gap: 2px;
+  margin-right: 5px; padding-top: 1px;
 }
 .act-day-label {
-  font-size: .6rem; color: var(--dim); font-family: var(--mono);
-  height: 13px; line-height: 13px;
-  width: 20px; text-align: right;
+  font-size: .55rem; color: var(--dim); font-family: var(--mono);
+  height: 12px; line-height: 12px;
+  width: 18px; text-align: right;
 }
-.act-cols {
-  display: flex; gap: 3px;
-}
-.act-col {
-  display: flex; flex-direction: column; gap: 3px;
-}
+.act-cols { display: flex; gap: 2px; }
+.act-col  { display: flex; flex-direction: column; gap: 2px; }
 .act-cell {
-  width: 13px; height: 13px;
+  width: 12px; height: 12px;
   border-radius: 2px;
   cursor: default;
   transition: transform .1s;
@@ -97,7 +89,6 @@
 .level-3 { background: color-mix(in srgb, var(--cyan) 76%, var(--surface2)); }
 .level-4 { background: var(--cyan); }
 
-/* Tooltip via title is fine; JS tooltip below for better UX */
 .act-tooltip {
   position: fixed; z-index: 100;
   background: var(--surface2); border: 1px solid var(--border);
@@ -106,17 +97,68 @@
   pointer-events: none; display: none; white-space: nowrap;
   box-shadow: 0 4px 12px rgba(0,0,0,.3);
 }
-
-/* Legend */
 .act-legend {
   display: flex; align-items: center; gap: 5px;
   margin-top: 12px;
   font-size: .65rem; color: var(--dim); font-family: var(--mono);
   justify-content: flex-end;
 }
-.act-legend-cell {
-  width: 11px; height: 11px; border-radius: 2px;
+.act-legend-cell { width: 10px; height: 10px; border-radius: 2px; }
+
+/* Domain filter */
+.act-filters {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 14px;
 }
+.act-filter {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: .68rem; font-family: var(--mono); color: var(--dim);
+  cursor: pointer; user-select: none;
+  transition: border-color .15s, color .15s;
+}
+.act-filter:hover { border-color: var(--cyan); color: var(--text); }
+.act-filter.active { border-color: var(--cyan); color: var(--cyan); background: color-mix(in srgb,var(--cyan) 10%,var(--surface)); }
+.act-filter-badge {
+  width: 16px; height: 16px; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: .55rem; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+
+/* Feed cards */
+.act-feed { display: flex; flex-direction: column; gap: 7px; }
+.act-card {
+  padding: 11px 13px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r);
+  transition: border-color .15s;
+}
+.act-card:hover { border-color: color-mix(in srgb,var(--cyan) 40%,var(--border)); }
+.act-card.hidden { display: none; }
+.act-card__meta {
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 6px;
+}
+.act-card__kind {
+  font-size: .6rem; font-family: var(--mono); color: var(--cyan);
+  background: color-mix(in srgb,var(--cyan) 12%,transparent);
+  padding: 2px 6px; border-radius: 3px;
+}
+.act-card__domain { font-size: .6rem; font-family: var(--mono); color: var(--dim); }
+.act-card__ts { margin-left: auto; font-size: .6rem; font-family: var(--mono); color: var(--dim); white-space: nowrap; }
+.act-card__link {
+  display: inline-flex; align-items: center;
+  margin-left: 6px;
+  color: var(--dim); text-decoration: none;
+  transition: color .15s;
+}
+.act-card__link:hover { color: var(--cyan); }
+.act-card__title { font-size: .85rem; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.act-card__text  { font-size: .82rem; color: var(--text); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.act-card__ref   { font-size: .7rem; font-family: var(--mono); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 {% endblock %}
 
@@ -158,8 +200,6 @@
   <!-- Heatmap -->
   <div class="act-graph">
     <div class="act-graph__inner">
-
-      <!-- Month labels row -->
       <div class="act-month-row">
         {% for week in grid %}
         <div class="act-month-label">
@@ -167,9 +207,7 @@
         </div>
         {% endfor %}
       </div>
-
       <div class="act-rows">
-        <!-- Day-of-week labels -->
         <div class="act-day-labels">
           <div class="act-day-label">Mon</div>
           <div class="act-day-label"></div>
@@ -179,22 +217,17 @@
           <div class="act-day-label"></div>
           <div class="act-day-label">Sun</div>
         </div>
-
-        <!-- Grid columns -->
         <div class="act-cols">
           {% for week in grid %}
           <div class="act-col">
             {% for day in week %}
             <div class="act-cell level-{{ day.level }} {% if day.future %}act-cell--future{% endif %}"
-                 data-date="{{ day.date }}"
-                 data-count="{{ day.count }}"></div>
+                 data-date="{{ day.date }}" data-count="{{ day.count }}"></div>
             {% endfor %}
           </div>
           {% endfor %}
         </div>
       </div>
-
-      <!-- Legend -->
       <div class="act-legend">
         less
         <div class="act-legend-cell level-0"></div>
@@ -204,34 +237,98 @@
         <div class="act-legend-cell level-4"></div>
         more
       </div>
-
     </div>
   </div>
 
+  <!-- Feed -->
+  {% if records %}
+  <div style="margin-top:28px;">
+    <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin-bottom:12px;">recent records</div>
+
+    <!-- Domain filters -->
+    {% if domains|length > 1 %}
+    <div class="act-filters" id="act-filters">
+      <div class="act-filter active" data-domain="all" onclick="filterDomain('all')">all</div>
+      {% for domain in domains %}
+      <div class="act-filter" data-domain="{{ domain }}" onclick="filterDomain('{{ domain }}')">
+        <span class="act-filter-badge" id="badge-{{ domain|replace('.','') }}">{{ domain[0]|upper }}</span>
+        {{ domain }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="act-feed" id="act-feed">
+      {% for r in records %}
+      <div class="act-card" data-domain="{{ r.domain }}">
+        <div class="act-card__meta">
+          <span class="act-card__kind">{{ r.kind }}</span>
+          <span class="act-card__domain">{{ r.domain }}</span>
+          <span class="act-card__ts">
+            {{ r.ts }}
+            {% if r.url %}
+            <a class="act-card__link" href="{{ r.url }}" target="_blank" rel="noopener" title="open on {{ r.domain }}">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+            {% endif %}
+          </span>
+        </div>
+        {% if r.title %}<div class="act-card__title">{{ r.title }}</div>{% endif %}
+        {% if r.text %}<div class="act-card__text">{{ r.text }}</div>{% endif %}
+        {% if r.ref and not r.text and not r.title %}
+          <div class="act-card__ref">{{ r.ref }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
 </div>
 
-<!-- Tooltip -->
 <div class="act-tooltip" id="act-tip"></div>
 
 <script>
 (function() {
+  // heatmap tooltip
   const tip = document.getElementById('act-tip');
-  const cells = document.querySelectorAll('.act-cell:not(.act-cell--future)');
-  cells.forEach(cell => {
+  document.querySelectorAll('.act-cell:not(.act-cell--future)').forEach(cell => {
     cell.addEventListener('mouseenter', e => {
-      const count = +cell.dataset.count;
-      const date = cell.dataset.date;
-      tip.textContent = count === 0 ? `no records · ${date}` : `${count} record${count === 1 ? '' : 's'} · ${date}`;
+      const n = +cell.dataset.count, d = cell.dataset.date;
+      tip.textContent = n === 0 ? `no records · ${d}` : `${n} record${n===1?'':'s'} · ${d}`;
       tip.style.display = 'block';
     });
     cell.addEventListener('mousemove', e => {
       tip.style.left = (e.clientX + 12) + 'px';
       tip.style.top  = (e.clientY - 28) + 'px';
     });
-    cell.addEventListener('mouseleave', () => {
-      tip.style.display = 'none';
-    });
+    cell.addEventListener('mouseleave', () => tip.style.display = 'none');
+  });
+
+  // badge colours — deterministic hue from domain string
+  function domainHue(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffff;
+    return h % 360;
+  }
+  document.querySelectorAll('.act-filter-badge').forEach(b => {
+    const domain = b.closest('.act-filter').dataset.domain;
+    const hue = domainHue(domain);
+    b.style.background = `hsl(${hue},55%,45%)`;
   });
 })();
+
+function filterDomain(domain) {
+  document.querySelectorAll('#act-filters .act-filter').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.domain === domain);
+  });
+  document.querySelectorAll('#act-feed .act-card').forEach(card => {
+    card.classList.toggle('hidden', domain !== 'all' && card.dataset.domain !== domain);
+  });
+}
 </script>
 {% endblock %}

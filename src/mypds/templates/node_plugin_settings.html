@@ -1,0 +1,92 @@
+{% extends "node_base.html" %}
+{% block title %}{{ plugin_name }} · settings{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:60px; max-width:540px;">
+
+  <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:28px;">
+    <h1 style="font-size:1.2rem; font-weight:700; margin:0;">{{ plugin_name }}</h1>
+    <span style="font-size:.75rem; color:var(--dim); font-family:var(--mono);">settings</span>
+    <a href="/{{ plugin_name }}" style="margin-left:auto; font-size:.75rem; color:var(--dim); text-decoration:none;">← back</a>
+  </div>
+
+  {% if saved %}
+  <div style="background:color-mix(in srgb,var(--cyan) 12%,transparent); border:1px solid var(--cyan); border-radius:var(--r); padding:10px 14px; font-size:.8rem; color:var(--cyan); margin-bottom:20px;">
+    Settings saved.
+  </div>
+  {% endif %}
+
+  {% if schema %}
+  <form method="post" action="/plugins/{{ plugin_name }}/settings">
+
+    {% set ns = namespace(current_group=None) %}
+    {% for s in schema %}
+
+      {% if s.get('group') != ns.current_group %}
+        {% if ns.current_group is not none %}</div>{% endif %}
+        {% set ns.current_group = s.get('group') %}
+        <div class="panel" style="margin-bottom:16px;">
+        {% if ns.current_group %}
+        <div class="panel__title">{{ ns.current_group }}</div>
+        {% endif %}
+      {% endif %}
+
+      <div style="padding:12px 0; border-bottom:1px solid var(--border);">
+        {% if s.type == 'bool' %}
+          <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
+            <input type="checkbox" name="{{ s.key }}" {% if values.get(s.key, s.get('default','0')) == '1' %}checked{% endif %}
+                   style="margin-top:3px; accent-color:var(--cyan); cursor:pointer; flex-shrink:0;">
+            <div>
+              <div style="font-size:.85rem; font-weight:600; color:var(--text); margin-bottom:3px;">{{ s.label }}</div>
+              {% if s.get('description') %}
+              <div style="font-size:.73rem; color:var(--dim); line-height:1.5;">{{ s.description }}</div>
+              {% endif %}
+            </div>
+          </label>
+
+        {% elif s.type == 'select' %}
+          <div style="font-size:.85rem; font-weight:600; color:var(--text); margin-bottom:4px;">{{ s.label }}</div>
+          {% if s.get('description') %}
+          <div style="font-size:.73rem; color:var(--dim); line-height:1.5; margin-bottom:8px;">{{ s.description }}</div>
+          {% endif %}
+          <select name="{{ s.key }}" style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); color:var(--text); padding:6px 10px; font-size:.82rem; cursor:pointer;">
+            {% for val, label in s.options %}
+            <option value="{{ val }}" {% if values.get(s.key, s.get('default','')) == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+
+        {% elif s.type == 'text' %}
+          <label>
+            <div style="font-size:.85rem; font-weight:600; color:var(--text); margin-bottom:4px;">{{ s.label }}</div>
+            {% if s.get('description') %}
+            <div style="font-size:.73rem; color:var(--dim); line-height:1.5; margin-bottom:8px;">{{ s.description }}</div>
+            {% endif %}
+            <textarea name="{{ s.key }}" rows="4"
+                      style="width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); color:var(--text); padding:8px 10px; font-size:.82rem; font-family:var(--mono); resize:vertical; box-sizing:border-box;">{{ values.get(s.key, s.get('default','')) }}</textarea>
+          </label>
+
+        {% else %}{# str / int / default #}
+          <label>
+            <div style="font-size:.85rem; font-weight:600; color:var(--text); margin-bottom:4px;">{{ s.label }}</div>
+            {% if s.get('description') %}
+            <div style="font-size:.73rem; color:var(--dim); line-height:1.5; margin-bottom:8px;">{{ s.description }}</div>
+            {% endif %}
+            <input type="{{ 'number' if s.type == 'int' else 'text' }}" name="{{ s.key }}"
+                   value="{{ values.get(s.key, s.get('default','')) }}"
+                   style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); color:var(--text); padding:6px 10px; font-size:.82rem; width:100%; box-sizing:border-box;">
+          </label>
+        {% endif %}
+      </div>
+
+    {% endfor %}
+    </div>{# close last group panel #}
+
+    <button type="submit" class="btn btn--primary" style="cursor:pointer; margin-top:8px;">Save settings</button>
+  </form>
+
+  {% else %}
+  <div style="color:var(--dim); font-size:.85rem;">This plugin has no configurable settings.</div>
+  {% endif %}
+
+</div>
+{% endblock %}

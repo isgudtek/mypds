@@ -161,6 +161,16 @@ class WebStore:
 		rows = self.con.execute("SELECT key, value FROM node_settings").fetchall()
 		return {r["key"]: r["value"] for r in rows}
 
+	# ── Plugin Settings ───────────────────────────────────────────────────────
+	# Stored in node_settings with key "plugin_{plugin}_{key}" so they are
+	# automatically available in all templates via the node_settings dict.
+
+	def get_plugin_setting(self, plugin: str, key: str, default: str = "") -> str:
+		return self.get_node_setting(f"plugin_{plugin}_{key}", default)
+
+	def set_plugin_setting(self, plugin: str, key: str, value: str):
+		self.set_node_setting(f"plugin_{plugin}_{key}", value)
+
 	def is_initialized(self) -> bool:
 		return self.get_node_setting("initialized") == "1"
 

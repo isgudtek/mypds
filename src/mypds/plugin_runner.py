@@ -191,7 +191,7 @@ class PluginManager:
         proc = subprocess.Popen(
             [sys.executable, "-m", f"mypds.plugins.{app_name}"],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=None,  # inherit stderr → appears in main process log
         )
         self._procs[app_name] = proc
 

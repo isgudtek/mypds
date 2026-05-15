@@ -1,1 +1,1 @@
-{% if session %}<a href="/activity" class="nav__link">activity</a>{% endif %}
+{% if node_settings.plugin_activity_public_page == "1" or session %}<li><a href="/activity">activity</a></li>{% endif %}

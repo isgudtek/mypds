@@ -85,8 +85,9 @@ def render(request: web.Request, template: str, ctx: dict = {}, status: int = 20
 	apps = ws.get_all_app_settings()
 	_ns = ws.get_all_node_settings()
 	node_settings = {
-		"nickname": _ns.get("nickname", ""),
-		"pfp_url": _ns.get("pfp_url", ""),
+		**_ns,
+		"nickname":     _ns.get("nickname", ""),
+		"pfp_url":      _ns.get("pfp_url", ""),
 		"accent_color": _ns.get("accent_color", ""),
 		"defense_mode": _ns.get("defense_mode", "0"),
 	}
@@ -476,6 +477,59 @@ async def app_toggle(request: web.Request):
 		else:
 			manager.stop(app_name)
 	raise web.HTTPFound("/dashboard")
+
+
+# ── Plugin Settings ───────────────────────────────────────────────────────────
+
+@web_routes.get("/plugins/{name}/settings")
+async def plugin_settings_get(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound(f"/login?next=/plugins/{request.match_info['name']}/settings")
+	name = request.match_info["name"]
+	plugin_names = request.app.get(MYPDS_PLUGINS, [])
+	if name not in plugin_names:
+		raise web.HTTPNotFound()
+	import importlib
+	mod = importlib.import_module(f"mypds.plugins.{name}")
+	schema = getattr(mod, "SETTINGS", [])
+	ws = get_web_store(request)
+	values = {s["key"]: ws.get_plugin_setting(name, s["key"], s.get("default", "")) for s in schema}
+	return render(request, "node_plugin_settings.html", {
+		"plugin_name": name,
+		"schema": schema,
+		"values": values,
+		"saved": False,
+	})
+
+
+@web_routes.post("/plugins/{name}/settings")
+async def plugin_settings_post(request: web.Request):
+	session = get_session(request)
+	if not session:
+		raise web.HTTPFound("/login")
+	name = request.match_info["name"]
+	plugin_names = request.app.get(MYPDS_PLUGINS, [])
+	if name not in plugin_names:
+		raise web.HTTPNotFound()
+	import importlib
+	mod = importlib.import_module(f"mypds.plugins.{name}")
+	schema = getattr(mod, "SETTINGS", [])
+	ws = get_web_store(request)
+	data = await request.post()
+	for s in schema:
+		key = s["key"]
+		if s["type"] == "bool":
+			ws.set_plugin_setting(name, key, "1" if data.get(key) else "0")
+		else:
+			ws.set_plugin_setting(name, key, data.get(key, s.get("default", "")))
+	values = {s["key"]: ws.get_plugin_setting(name, s["key"], s.get("default", "")) for s in schema}
+	return render(request, "node_plugin_settings.html", {
+		"plugin_name": name,
+		"schema": schema,
+		"values": values,
+		"saved": True,
+	})
 
 
 # ── Node Settings ─────────────────────────────────────────────────────────────
