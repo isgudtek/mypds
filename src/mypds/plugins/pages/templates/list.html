@@ -1,0 +1,77 @@
+{% extends "node_base.html" %}
+{% block title %}pages{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:60px;">
+
+  <div class="flex items-center gap-8" style="margin-bottom:24px;">
+    <h1 style="font-size:1.3rem; font-weight:700;">Pages</h1>
+    {% if session %}<a class="btn btn--primary btn--sm" href="/pages/new" style="margin-left:auto;">+ new page</a>{% endif %}
+  </div>
+
+  {% if pages %}
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>title</th>
+            <th>slug</th>
+            <th>status</th>
+            <th>updated</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in pages %}
+          <tr>
+            <td>
+              {{ p.title }}
+              {% if p.is_protected %}
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24"
+                   fill="none" stroke="currentColor" stroke-width="2.5"
+                   stroke-linecap="round" stroke-linejoin="round"
+                   style="vertical-align:middle; margin-left:4px; color:var(--muted);"
+                   title="Password protected">
+                <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              {% endif %}
+            </td>
+            <td class="mono text-dim" style="font-size:.78rem;">/p/{{ p.slug }}</td>
+            <td>
+              <span class="badge {{ 'badge--live' if p.is_published else 'badge--draft' }}">
+                {{ 'live' if p.is_published else 'draft' }}
+              </span>
+            </td>
+            <td class="mono text-dim" style="font-size:.72rem;">
+              {{ p.updated_at | int | timestamp }}
+            </td>
+            <td>
+              <div class="flex gap-8">
+                {% if p.is_published %}
+                <a class="btn btn--ghost btn--sm" href="/p/{{ p.slug }}">view</a>
+                {% endif %}
+                {% if session %}
+                <a class="btn btn--ghost btn--sm" href="/pages/{{ p.id }}/edit">edit</a>
+                <form method="post" action="/pages/{{ p.id }}/delete" style="display:inline;"
+                      onsubmit="return confirm('Delete {{ p.title }}?')">
+                  <button class="btn btn--danger btn--sm" type="submit">delete</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty__icon">📄</div>
+    No pages yet.{% if session %} <a href="/pages/new">Create one →</a>{% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

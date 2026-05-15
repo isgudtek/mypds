@@ -1,0 +1,15 @@
+<div class="app-tile {% if not apps.files %}app-tile--off{% endif %}">
+  <div class="app-tile__icon">
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>
+  </div>
+  <div class="app-tile__name"><a href="/files" style="color:var(--text)">files</a></div>
+  <div class="app-tile__status" style="color:var(--cyan);">blob store</div>
+  <form method="post" action="/apps/files/toggle" style="margin-top:6px;">
+    <button class="app-toggle {% if apps.files %}app-toggle--on{% endif %}" type="submit" style="cursor:pointer;">
+      {{ 'on' if apps.files else 'off' }}
+    </button>
+  </form>
+</div>

@@ -69,20 +69,6 @@ class WebStore:
 		al_cols = {r[1] for r in self.con.execute("PRAGMA table_info(app_logins)").fetchall()}
 		if "client_url" not in al_cols:
 			self.con.execute("ALTER TABLE app_logins ADD COLUMN client_url TEXT")
-		# Ensure dropbox_item table exists
-		self.con.execute("""
-			CREATE TABLE IF NOT EXISTS dropbox_item (
-				id          INTEGER PRIMARY KEY AUTOINCREMENT,
-				filename    TEXT NOT NULL,
-				orig_name   TEXT NOT NULL,
-				mime_type   TEXT NOT NULL,
-				size        INTEGER NOT NULL,
-				sender_name TEXT NOT NULL DEFAULT '',
-				message     TEXT NOT NULL DEFAULT '',
-				status      TEXT NOT NULL DEFAULT 'pending',
-				created_at  INTEGER NOT NULL
-			)
-		""")
 		self.con.commit()
 
 	def _init_tables(self):
@@ -95,29 +81,6 @@ class WebStore:
 				expires_at INTEGER NOT NULL
 			);
 
-			CREATE TABLE IF NOT EXISTS page (
-				id          INTEGER PRIMARY KEY AUTOINCREMENT,
-				slug        TEXT UNIQUE NOT NULL,
-				title       TEXT NOT NULL,
-				body        TEXT NOT NULL,
-				is_published INTEGER NOT NULL DEFAULT 0,
-				created_at  INTEGER NOT NULL,
-				updated_at  INTEGER NOT NULL,
-				published_at INTEGER,
-				at_rkey     TEXT,
-				at_uri      TEXT
-			);
-
-			CREATE TABLE IF NOT EXISTS media_file (
-				id          INTEGER PRIMARY KEY AUTOINCREMENT,
-				filename    TEXT NOT NULL,
-				orig_name   TEXT NOT NULL,
-				mime_type   TEXT NOT NULL,
-				size        INTEGER NOT NULL,
-				is_public   INTEGER NOT NULL DEFAULT 1,
-				created_at  INTEGER NOT NULL
-			);
-
 			CREATE TABLE IF NOT EXISTS app_settings (
 				app_name TEXT PRIMARY KEY,
 				enabled  INTEGER NOT NULL DEFAULT 1
@@ -128,17 +91,6 @@ class WebStore:
 				value TEXT NOT NULL
 			);
 
-			CREATE TABLE IF NOT EXISTS dropbox_item (
-				id          INTEGER PRIMARY KEY AUTOINCREMENT,
-				filename    TEXT NOT NULL,
-				orig_name   TEXT NOT NULL,
-				mime_type   TEXT NOT NULL,
-				size        INTEGER NOT NULL,
-				sender_name TEXT NOT NULL DEFAULT '',
-				message     TEXT NOT NULL DEFAULT '',
-				status      TEXT NOT NULL DEFAULT 'pending',
-				created_at  INTEGER NOT NULL
-			);
 		""")
 		self.con.commit()
 		self._migrate()
@@ -166,129 +118,9 @@ class WebStore:
 		self.con.execute("DELETE FROM web_session WHERE token=?", (token,))
 		self.con.commit()
 
-	# ── Pages ─────────────────────────────────────────────────────────────────
-
-	def list_pages(self) -> List[Dict]:
-		rows = self.con.execute(
-			"SELECT id, slug, title, is_published, created_at, updated_at, password_hash FROM page ORDER BY updated_at DESC"
-		).fetchall()
-		result = []
-		for r in rows:
-			d = dict(r)
-			d["is_protected"] = bool(d.get("password_hash"))
-			result.append(d)
-		return result
-
-	def get_page(self, slug: str) -> Optional[Dict]:
-		row = self.con.execute(
-			"SELECT * FROM page WHERE slug=?", (slug,)
-		).fetchone()
-		return dict(row) if row else None
-
-	def get_page_by_id(self, page_id: int) -> Optional[Dict]:
-		row = self.con.execute(
-			"SELECT * FROM page WHERE id=?", (page_id,)
-		).fetchone()
-		return dict(row) if row else None
-
-	def create_page(self, slug: str, title: str, body: str, published: bool = False) -> int:
-		now = int(time.time())
-		cur = self.con.execute(
-			"INSERT INTO page(slug, title, body, is_published, created_at, updated_at, published_at) VALUES (?,?,?,?,?,?,?)",
-			(slug, title, body, int(published), now, now, now if published else None),
-		)
-		self.con.commit()
-		return cur.lastrowid
-
-	def update_page(self, page_id: int, slug: str, title: str, body: str, published: bool):
-		now = int(time.time())
-		# Only set published_at the first time it goes live
-		row = self.con.execute("SELECT published_at FROM page WHERE id=?", (page_id,)).fetchone()
-		pub_at = (row["published_at"] or now) if published else (row["published_at"] if row else None)
-		self.con.execute(
-			"UPDATE page SET slug=?, title=?, body=?, is_published=?, updated_at=?, published_at=? WHERE id=?",
-			(slug, title, body, int(published), now, pub_at, page_id),
-		)
-		self.con.commit()
-
-	def set_page_password(self, page_id: int, password_hash: Optional[str]):
-		"""Set or clear a page password (pass None to remove protection)."""
-		self.con.execute(
-			"UPDATE page SET password_hash=? WHERE id=?",
-			(password_hash, page_id),
-		)
-		self.con.commit()
-
-	def verify_page_password(self, page_id: int, raw_password: str) -> bool:
-		"""Return True if raw_password matches the stored hash for this page."""
-		import hashlib
-		row = self.con.execute(
-			"SELECT password_hash FROM page WHERE id=?", (page_id,)
-		).fetchone()
-		if row is None or not row["password_hash"]:
-			return True  # no password set → always accessible
-		expected = hashlib.sha256(raw_password.encode()).hexdigest()
-		return row["password_hash"] == expected
-
-	def set_page_atproto(self, page_id: int, at_rkey: str, at_uri: str):
-		self.con.execute(
-			"UPDATE page SET at_rkey=?, at_uri=? WHERE id=?",
-			(at_rkey, at_uri, page_id),
-		)
-		self.con.commit()
-
-	def delete_page(self, page_id: int):
-		self.con.execute("DELETE FROM page WHERE id=?", (page_id,))
-		self.con.commit()
-
-	# ── Media Files ───────────────────────────────────────────────────────────
-
-	def list_files(self) -> List[Dict]:
-		rows = self.con.execute(
-			"SELECT * FROM media_file ORDER BY created_at DESC"
-		).fetchall()
-		return [dict(r) for r in rows]
-
-	def get_file(self, file_id: int) -> Optional[Dict]:
-		row = self.con.execute(
-			"SELECT * FROM media_file WHERE id=?", (file_id,)
-		).fetchone()
-		return dict(row) if row else None
-
-	def get_file_by_name(self, filename: str) -> Optional[Dict]:
-		row = self.con.execute(
-			"SELECT * FROM media_file WHERE filename=?", (filename,)
-		).fetchone()
-		return dict(row) if row else None
-
-	def save_file(self, filename: str, orig_name: str, mime_type: str, size: int, is_public: bool = True) -> int:
-		cur = self.con.execute(
-			"INSERT INTO media_file(filename, orig_name, mime_type, size, is_public, created_at) VALUES (?,?,?,?,?,?)",
-			(filename, orig_name, mime_type, size, int(is_public), int(time.time())),
-		)
-		self.con.commit()
-		return cur.lastrowid
-
-	def delete_file(self, file_id: int):
-		row = self.get_file(file_id)
-		if row:
-			path = os.path.join(MEDIA_DIR, row["filename"])
-			try:
-				os.remove(path)
-			except FileNotFoundError:
-				pass
-		self.con.execute("DELETE FROM media_file WHERE id=?", (file_id,))
-		self.con.commit()
-
-	def toggle_file_visibility(self, file_id: int):
-		self.con.execute(
-			"UPDATE media_file SET is_public = NOT is_public WHERE id=?", (file_id,)
-		)
-		self.con.commit()
-
 	# ── App Settings ──────────────────────────────────────────────────────────
 
-	KNOWN_APPS = ["compose", "pages", "files", "gallery", "links", "places", "dropbox", "activity", "cv", "portal"]
+	KNOWN_APPS = ["compose"]  # all other apps are auto-discovered plugins
 
 	def get_app_enabled(self, app_name: str) -> bool:
 		row = self.con.execute(
@@ -368,47 +200,3 @@ class WebStore:
 				apps[d]["client_url"] = r["client_url"]
 		return sorted(apps.values(), key=lambda a: a["last_seen"], reverse=True)
 
-	# ── Dropbox ───────────────────────────────────────────────────────────────
-
-	DROPBOX_DIR_NAME = "dropbox"
-
-	def save_dropbox_item(self, filename: str, orig_name: str, mime_type: str, size: int,
-	                      sender_name: str = "", message: str = "") -> int:
-		cur = self.con.execute(
-			"INSERT INTO dropbox_item(filename, orig_name, mime_type, size, sender_name, message, status, created_at) "
-			"VALUES (?,?,?,?,?,?,'pending',?)",
-			(filename, orig_name, mime_type, size, sender_name[:120], message[:500], int(time.time())),
-		)
-		self.con.commit()
-		return cur.lastrowid
-
-	def list_dropbox_items(self, status: Optional[str] = None) -> List[Dict]:
-		if status:
-			rows = self.con.execute(
-				"SELECT * FROM dropbox_item WHERE status=? ORDER BY created_at DESC", (status,)
-			).fetchall()
-		else:
-			rows = self.con.execute(
-				"SELECT * FROM dropbox_item ORDER BY created_at DESC"
-			).fetchall()
-		return [dict(r) for r in rows]
-
-	def get_dropbox_item(self, item_id: int) -> Optional[Dict]:
-		row = self.con.execute("SELECT * FROM dropbox_item WHERE id=?", (item_id,)).fetchone()
-		return dict(row) if row else None
-
-	def accept_dropbox_item(self, item_id: int):
-		"""Mark as accepted (file moves to media_file via web route)."""
-		self.con.execute("UPDATE dropbox_item SET status='accepted' WHERE id=?", (item_id,))
-		self.con.commit()
-
-	def delete_dropbox_item(self, item_id: int):
-		row = self.get_dropbox_item(item_id)
-		if row:
-			path = os.path.join(MEDIA_DIR, "dropbox", row["filename"])
-			try:
-				os.remove(path)
-			except FileNotFoundError:
-				pass
-		self.con.execute("DELETE FROM dropbox_item WHERE id=?", (item_id,))
-		self.con.commit()

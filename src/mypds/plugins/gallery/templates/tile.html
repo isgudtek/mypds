@@ -1,0 +1,17 @@
+<div class="app-tile {% if not apps.gallery %}app-tile--off{% endif %}">
+  <div class="app-tile__icon">
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
+    </svg>
+  </div>
+  <div class="app-tile__name"><a href="/gallery" style="color:var(--text)">gallery</a></div>
+  <div class="app-tile__status" style="color:var(--cyan);">pub.gallery.image</div>
+  <form method="post" action="/apps/gallery/toggle" style="margin-top:6px;">
+    <button class="app-toggle {% if apps.gallery %}app-toggle--on{% endif %}" type="submit" style="cursor:pointer;">
+      {{ 'on' if apps.gallery else 'off' }}
+    </button>
+  </form>
+</div>

@@ -170,15 +170,23 @@ class PluginManager:
     def sock_path(self, app_name: str) -> str:
         return static_config.DATA_DIR + f"/plugins/{app_name}.sock"
 
+    def plugin_exists(self, app_name: str) -> bool:
+        """True if a plugin module exists for this app name."""
+        import importlib.util
+        return importlib.util.find_spec(f"mypds.plugins.{app_name}") is not None
+
     def is_running(self, app_name: str) -> bool:
         return Path(self.sock_path(app_name)).exists()
 
     def start(self, app_name: str, timeout: float = 5.0) -> bool:
         """Spawn plugin subprocess, wait for socket (up to timeout seconds)."""
-        if self.is_running(app_name):
+        # Trust our own process table, not stale socket files from prior runs
+        proc = self._procs.get(app_name)
+        if proc and proc.poll() is None and self.is_running(app_name):
             return True
         sock = self.sock_path(app_name)
         Path(sock).parent.mkdir(parents=True, exist_ok=True)
+        Path(sock).unlink(missing_ok=True)  # remove stale socket from previous run
 
         proc = subprocess.Popen(
             [sys.executable, "-m", f"mypds.plugins.{app_name}"],
@@ -240,31 +248,36 @@ async def proxy_to_plugin(request: web.Request, app_name: str) -> web.Response:
 
     connector = aiohttp.UnixConnector(path=sock)
     jar = aiohttp.DummyCookieJar()  # preserve Set-Cookie pass-through
-    async with aiohttp.ClientSession(connector=connector, cookie_jar=jar) as sess:
-        async with sess.request(
-            method=request.method,
-            url=f"http://plugin{request.path_qs}",
-            headers=headers,
-            data=body,
-            allow_redirects=False,
-        ) as upstream:
-            ct = upstream.headers.get("Content-Type", "")
+    try:
+        async with aiohttp.ClientSession(connector=connector, cookie_jar=jar) as sess:
+            async with sess.request(
+                method=request.method,
+                url=f"http://plugin{request.path_qs}",
+                headers=headers,
+                data=body,
+                allow_redirects=False,
+            ) as upstream:
+                ct = upstream.headers.get("Content-Type", "")
 
-            if "text/event-stream" in ct:
-                # streaming SSE — don't buffer
-                stream_resp = web.StreamResponse(
-                    status=upstream.status,
-                    headers={"Content-Type": ct, "Cache-Control": "no-cache",
-                             "X-Accel-Buffering": "no"},
-                )
-                await stream_resp.prepare(request)
-                async for chunk in upstream.content.iter_any():
-                    await stream_resp.write(chunk)
-                return stream_resp
+                if "text/event-stream" in ct:
+                    # streaming SSE — don't buffer
+                    stream_resp = web.StreamResponse(
+                        status=upstream.status,
+                        headers={"Content-Type": ct, "Cache-Control": "no-cache",
+                                 "X-Accel-Buffering": "no"},
+                    )
+                    await stream_resp.prepare(request)
+                    async for chunk in upstream.content.iter_any():
+                        await stream_resp.write(chunk)
+                    return stream_resp
 
-            resp_body = await upstream.read()
-            resp = web.Response(status=upstream.status, body=resp_body)
-            for k, v in upstream.headers.items():
-                if k.lower() in _FORWARD_RESP_HEADERS:
-                    resp.headers.add(k, v)
-            return resp
+                resp_body = await upstream.read()
+                resp = web.Response(status=upstream.status, body=resp_body)
+                for k, v in upstream.headers.items():
+                    if k.lower() in _FORWARD_RESP_HEADERS:
+                        resp.headers.add(k, v)
+                return resp
+    except aiohttp.ClientConnectorError:
+        # socket exists but process crashed — clean it up and return 404
+        Path(sock).unlink(missing_ok=True)
+        raise web.HTTPNotFound()

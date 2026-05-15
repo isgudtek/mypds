@@ -1,0 +1,106 @@
+{% extends "node_base.html" %}
+{% block title %}edit links{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:80px; max-width:640px;">
+
+  <div style="margin-bottom:28px;">
+    <div class="mono text-dim" style="font-size:.7rem; margin-bottom:8px;">
+      <a href="/links" style="color:var(--dim);">links</a> / edit
+    </div>
+    <h1 style="font-size:1.3rem; font-weight:700;">Edit Links</h1>
+    <div class="mono text-dim" style="font-size:.68rem; margin-top:4px;">
+      stored as <span style="color:var(--cyan);">at://{{ profile.did }}/pub.social.linktree/self</span>
+    </div>
+  </div>
+
+  <form method="post" action="/links/edit" id="linktree-form">
+
+    <div id="link-rows">
+      {% for link in links %}
+      <div class="link-row" data-platform="{{ link.platform or 'other' }}">
+        <div class="link-row__platform">
+          <select class="input platform-select" name="platform" style="cursor:pointer;">
+            <option value="bluesky"   {% if (link.platform or 'other') == 'bluesky'   %}selected{% endif %}>Bluesky</option>
+            <option value="twitter"   {% if (link.platform or 'other') == 'twitter'   %}selected{% endif %}>X / Twitter</option>
+            <option value="instagram" {% if (link.platform or 'other') == 'instagram' %}selected{% endif %}>Instagram</option>
+            <option value="github"    {% if (link.platform or 'other') == 'github'    %}selected{% endif %}>GitHub</option>
+            <option value="linkedin"  {% if (link.platform or 'other') == 'linkedin'  %}selected{% endif %}>LinkedIn</option>
+            <option value="youtube"   {% if (link.platform or 'other') == 'youtube'   %}selected{% endif %}>YouTube</option>
+            <option value="tiktok"    {% if (link.platform or 'other') == 'tiktok'    %}selected{% endif %}>TikTok</option>
+            <option value="mastodon"  {% if (link.platform or 'other') == 'mastodon'  %}selected{% endif %}>Mastodon</option>
+            <option value="telegram"  {% if (link.platform or 'other') == 'telegram'  %}selected{% endif %}>Telegram</option>
+            <option value="email"     {% if (link.platform or 'other') == 'email'     %}selected{% endif %}>Email</option>
+            <option value="website"   {% if (link.platform or 'other') == 'website'   %}selected{% endif %}>Website</option>
+            <option value="other"     {% if (link.platform or 'other') == 'other'     %}selected{% endif %}>Other</option>
+          </select>
+        </div>
+        <div class="link-row__fields">
+          <input class="input" type="text" name="title" value="{{ link.title }}" placeholder="Label" required>
+          <input class="input" type="url" name="url" value="{{ link.url }}" placeholder="https://..." required>
+        </div>
+        <button type="button" class="btn btn--danger btn--sm link-row__del" onclick="this.closest('.link-row').remove()" style="cursor:pointer;" title="Remove">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <button type="button" id="add-row" class="btn btn--ghost btn--sm" style="margin-bottom:24px; cursor:pointer;">
+      + add link
+    </button>
+
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn--primary" type="submit" style="cursor:pointer;">save</button>
+      <a class="btn btn--ghost" href="/links" style="cursor:pointer;">cancel</a>
+    </div>
+
+  </form>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PLATFORM_OPTIONS = `
+  <option value="bluesky">Bluesky</option>
+  <option value="twitter">X / Twitter</option>
+  <option value="instagram">Instagram</option>
+  <option value="github">GitHub</option>
+  <option value="linkedin">LinkedIn</option>
+  <option value="youtube">YouTube</option>
+  <option value="tiktok">TikTok</option>
+  <option value="mastodon">Mastodon</option>
+  <option value="telegram">Telegram</option>
+  <option value="email">Email</option>
+  <option value="website">Website</option>
+  <option value="other" selected>Other</option>
+`;
+
+document.getElementById('add-row').addEventListener('click', function() {
+  const row = document.createElement('div');
+  row.className = 'link-row';
+  row.dataset.platform = 'other';
+  row.innerHTML = `
+    <div class="link-row__platform">
+      <select class="input platform-select" name="platform" style="cursor:pointer;">${PLATFORM_OPTIONS}</select>
+    </div>
+    <div class="link-row__fields">
+      <input class="input" type="text" name="title" placeholder="Label" required>
+      <input class="input" type="url" name="url" placeholder="https://..." required>
+    </div>
+    <button type="button" class="btn btn--danger btn--sm link-row__del" onclick="this.closest('.link-row').remove()" style="cursor:pointer;" title="Remove">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  `;
+  document.getElementById('link-rows').appendChild(row);
+  row.querySelector('input[name="title"]').focus();
+});
+</script>
+{% endblock %}

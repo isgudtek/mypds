@@ -1,0 +1,159 @@
+{% extends "node_base.html" %}
+{% block title %}{{ 'edit page' if page and page.id else 'new page' }}{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:60px;">
+
+  <div style="margin-bottom:24px;">
+    <h1 style="font-size:1.3rem; font-weight:700;">
+      {{ 'Edit Page' if page and page.id else 'New Page' }}
+    </h1>
+  </div>
+
+  {% if error %}
+  <div class="alert alert--error">{{ error }}</div>
+  {% endif %}
+
+  {% set action = '/pages/' + page.id|string + '/edit' if page and page.id else '/pages/new' %}
+
+  <form method="post" action="{{ action }}">
+
+    <div class="grid-2" style="margin-bottom:18px;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Title</label>
+        <input class="form-control" type="text" name="title"
+               value="{{ page.title if page else '' }}"
+               placeholder="My Page" required>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Slug</label>
+        <input class="form-control form-control--mono" type="text" name="slug"
+               value="{{ page.slug if page else '' }}"
+               placeholder="my-page" required id="slug-input">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Body (Markdown)</label>
+      <textarea class="form-control form-control--mono" name="body" id="body-textarea"
+                rows="20" placeholder="# Hello world&#10;&#10;Write in **Markdown**."
+                required>{{ page.body if page else '' }}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label style="display:flex; align-items:center; gap:6px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        Images
+      </label>
+      <div class="upload-zone">
+        <input type="file" id="img-upload" accept="image/*" style="font-size:.82rem;">
+        <div style="margin-top:6px; font-size:.75rem; color:var(--muted);">
+          Upload an image and paste the generated markdown snippet into your body.
+        </div>
+      </div>
+      <div class="upload-hint" id="upload-hint" onclick="copyHint(this)" title="Click to copy"></div>
+    </div>
+
+    <div class="form-group">
+      <label style="display:flex; align-items:center; gap:6px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        Password protection
+        {% if page and page.password_hash %}
+        <span class="badge badge--live" style="font-size:.65rem; margin-left:4px;">protected</span>
+        {% endif %}
+      </label>
+      <input class="form-control" type="password" name="page_password"
+             placeholder="Leave blank to keep unchanged{{ ' · currently protected' if page and page.password_hash else ' · set to protect' }}">
+      {% if page and page.password_hash %}
+      <label class="checkbox-row" style="margin-top:6px;">
+        <input type="checkbox" name="clear_password" value="1">
+        Remove password protection
+      </label>
+      {% endif %}
+      <div style="font-size:.72rem; color:var(--muted); margin-top:4px;">
+        Protected pages are not synced to ATProto / Bluesky.
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label class="checkbox-row">
+        <input type="checkbox" name="published" value="1"
+               {{ 'checked' if page and page.is_published else '' }}>
+        Publish publicly
+      </label>
+      <label class="checkbox-row" style="margin-left:16px;">
+        <input type="checkbox" name="announce" value="1" id="announce-check">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             style="vertical-align:middle; margin-right:4px; color:var(--cyan);">
+          <path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/>
+        </svg>
+        Announce on Bluesky
+      </label>
+      <button class="btn btn--primary" type="submit" style="cursor:pointer;">Save page</button>
+      <a class="btn btn--ghost" href="/pages" style="cursor:pointer;">cancel</a>
+    </div>
+
+  </form>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-generate slug from title if slug is empty
+const titleInput = document.querySelector('input[name="title"]');
+const slugInput = document.getElementById('slug-input');
+let slugEdited = slugInput.value.length > 0;
+
+slugInput.addEventListener('input', () => { slugEdited = true; });
+titleInput.addEventListener('input', () => {
+  if (!slugEdited) {
+    slugInput.value = titleInput.value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+});
+
+// Image upload
+const imgUpload = document.getElementById('img-upload');
+const uploadHint = document.getElementById('upload-hint');
+const bodyTextarea = document.getElementById('body-textarea');
+
+imgUpload.addEventListener('change', async () => {
+  const file = imgUpload.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  uploadHint.textContent = 'Uploading...';
+  uploadHint.classList.add('visible');
+  try {
+    const res = await fetch('/pages/upload-image', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error('Upload failed');
+    const data = await res.json();
+    uploadHint.textContent = data.markdown;
+    uploadHint.dataset.md = data.markdown;
+  } catch (e) {
+    uploadHint.textContent = 'Upload failed: ' + e.message;
+  }
+});
+
+function copyHint(el) {
+  const md = el.dataset.md || el.textContent;
+  if (!md || md.startsWith('Upload')) return;
+  navigator.clipboard.writeText(md).then(() => {
+    const orig = el.textContent;
+    el.textContent = 'Copied!';
+    setTimeout(() => { el.textContent = orig; }, 1200);
+  });
+}
+</script>
+{% endblock %}

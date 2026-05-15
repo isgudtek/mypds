@@ -1,0 +1,117 @@
+{% extends "node_base.html" %}
+{% block title %}gallery{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:32px; padding-bottom:80px;">
+
+  <div class="flex items-center gap-8" style="margin-bottom:24px;">
+    <div>
+      <h1 style="font-size:1.3rem; font-weight:700;">Gallery</h1>
+      <div class="mono text-dim" style="font-size:.68rem; margin-top:2px;">
+        pub.gallery.image · {{ images|length }} image{{ 's' if images|length != 1 else '' }}
+      </div>
+    </div>
+    {% if session %}
+    <a class="btn btn--primary btn--sm" href="/gallery/upload" style="margin-left:auto; cursor:pointer;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           style="vertical-align:middle; margin-right:4px;">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      upload
+    </a>
+    {% endif %}
+  </div>
+
+  {% if images %}
+  <div class="gallery-grid">
+    {% for img in images %}
+    <div class="gallery-item">
+      {% set thumb = img.webUrl if img.webUrl else '/gallery' %}
+      <a href="{{ thumb }}" class="gallery-item__thumb" style="cursor:pointer;"
+         onclick="openLightbox({{ thumb|tojson }}, {{ img.title|tojson }}, {{ img.description|tojson }}, {{ img.at_uri|tojson }}); return false;">
+        <img src="{{ thumb }}" alt="{{ img.title }}" loading="lazy">
+      </a>
+      <div class="gallery-item__meta">
+        {% if img.title %}
+        <div class="gallery-item__title">{{ img.title }}</div>
+        {% endif %}
+        {% if img.tags %}
+        <div class="gallery-item__tags">
+          {% for tag in img.tags %}
+          <span class="gallery-tag">#{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div class="gallery-item__uri mono" title="{{ img.at_uri }}">
+          <a href="https://atproto-browser.vercel.app/at?u={{ img.at_uri }}" target="_blank" rel="noopener"
+             style="color:var(--dim); font-size:.62rem; text-decoration:none;">
+            {{ img.at_uri[:48] }}… ↗
+          </a>
+        </div>
+        {% if session %}
+        <form method="post" action="/gallery/{{ img.rkey }}/delete" style="margin-top:4px;"
+              onsubmit="return confirm('Delete this image?')">
+          <button class="btn btn--danger btn--sm" type="submit" style="cursor:pointer;">delete</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="empty">
+    <div class="empty__icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+           style="color:var(--border2);">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+    </div>
+    No images yet.
+    {% if session %}
+    <a href="/gallery/upload">Upload one →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()" style="display:none; cursor:pointer;">
+  <div class="lightbox__inner" onclick="event.stopPropagation()">
+    <button class="lightbox__close" onclick="closeLightbox()" style="cursor:pointer;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <img id="lightbox-img" src="" alt="" style="max-width:100%; max-height:80vh; border-radius:6px; display:block;">
+    <div class="lightbox__caption">
+      <div id="lightbox-title" style="font-weight:600; margin-bottom:4px;"></div>
+      <div id="lightbox-desc" style="font-size:.85rem; color:var(--dim); margin-bottom:8px;"></div>
+      <div id="lightbox-uri" class="mono" style="font-size:.65rem; color:var(--cyan);"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openLightbox(url, title, desc, atUri) {
+  document.getElementById('lightbox-img').src = url;
+  document.getElementById('lightbox-title').textContent = title || '';
+  document.getElementById('lightbox-desc').textContent = desc || '';
+  document.getElementById('lightbox-uri').textContent = atUri || '';
+  document.getElementById('lightbox').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox() {
+  document.getElementById('lightbox').style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+</script>
+{% endblock %}
