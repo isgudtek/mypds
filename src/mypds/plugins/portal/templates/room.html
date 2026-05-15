@@ -72,6 +72,13 @@
 }
 .drop__text { font-size:.82rem; color:var(--text); word-break:break-word; }
 .drop__img { max-width:100%; border-radius:6px; margin-top:6px; display:block; max-height:320px; object-fit:contain; }
+.drop__file {
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:.78rem; color:var(--cyan); text-decoration:none;
+  border:1px solid color-mix(in srgb,var(--cyan) 30%,transparent);
+  border-radius:6px; padding:5px 10px; margin-top:6px; word-break:break-all;
+}
+.drop__file:hover { border-color:var(--cyan); }
 .drop__time { font-size:.6rem; color:var(--dim); font-family:var(--mono); margin-top:4px; }
 
 .portal-input {
@@ -240,7 +247,16 @@
     </div>
     <div class="drop__bubble">
       {% if drop[2] %}<div class="drop__text">{{ drop[2] }}</div>{% endif %}
-      {% if drop[4] %}<img class="drop__img" src="/portal/img/{{ drop[4] }}" alt="image drop">{% endif %}
+      {% if drop[4] %}
+        {% if drop[6] %}
+          <img class="drop__img" src="/portal/img/{{ drop[4] }}" alt="image drop">
+        {% else %}
+          <a class="drop__file" href="/portal/img/{{ drop[4] }}" download="{{ drop[5] or drop[4] }}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            {{ drop[5] or drop[4] }}
+          </a>
+        {% endif %}
+      {% endif %}
       <div class="drop__time">{{ drop[3][:16] }}</div>
     </div>
   </div>
@@ -260,16 +276,16 @@
       <label class="img-attach-label" id="attach-label" for="img-input">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
              fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-          <path d="m21 15-5-5L5 21"/>
+          <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
         </svg>
-        img
+        file
       </label>
-      <input type="file" id="img-input" name="image" accept="image/jpeg,image/png,image/gif,image/webp">
+      <input type="file" id="img-input" name="image">
       <button type="submit">drop</button>
     </div>
     <div class="img-preview-wrap" id="img-preview-wrap">
       <img id="img-preview" src="" alt="">
+      <span id="file-name-label" style="display:none;font-size:.72rem;font-family:var(--mono);color:var(--cyan);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
       <div class="img-clear" id="img-clear">✕</div>
     </div>
   </form>
@@ -289,16 +305,26 @@
   dropsEl.scrollIntoView({block: 'end'});
 
   // ── image attach preview ──────────────────────────────────────────────────
-  const imgInput   = document.getElementById('img-input');
-  const imgPreview = document.getElementById('img-preview');
-  const previewWrap= document.getElementById('img-preview-wrap');
-  const attachLabel= document.getElementById('attach-label');
-  const imgClear   = document.getElementById('img-clear');
+  const imgInput     = document.getElementById('img-input');
+  const imgPreview   = document.getElementById('img-preview');
+  const previewWrap  = document.getElementById('img-preview-wrap');
+  const attachLabel  = document.getElementById('attach-label');
+  const imgClear     = document.getElementById('img-clear');
+  const fileNameLabel= document.getElementById('file-name-label');
 
   imgInput.addEventListener('change', function() {
     if (this.files[0]) {
-      const url = URL.createObjectURL(this.files[0]);
-      imgPreview.src = url;
+      const file = this.files[0];
+      if (file.type.startsWith('image/')) {
+        imgPreview.src = URL.createObjectURL(file);
+        imgPreview.style.display = '';
+        fileNameLabel.style.display = 'none';
+      } else {
+        imgPreview.src = '';
+        imgPreview.style.display = 'none';
+        fileNameLabel.textContent = file.name;
+        fileNameLabel.style.display = 'inline';
+      }
       previewWrap.classList.add('visible');
       attachLabel.classList.add('has-file');
     }
@@ -307,6 +333,8 @@
   imgClear.addEventListener('click', function() {
     imgInput.value = '';
     imgPreview.src = '';
+    imgPreview.style.display = '';
+    fileNameLabel.style.display = 'none';
     previewWrap.classList.remove('visible');
     attachLabel.classList.remove('has-file');
   });
@@ -347,11 +375,24 @@
       bubble.appendChild(txt);
     }
     if (d.image) {
-      const img = document.createElement('img');
-      img.className = 'drop__img';
-      img.src = d.image;
-      img.alt = 'image drop';
-      bubble.appendChild(img);
+      if (d.is_image !== false) {
+        const img = document.createElement('img');
+        img.className = 'drop__img';
+        img.src = d.image;
+        img.alt = 'image drop';
+        bubble.appendChild(img);
+      } else {
+        const a = document.createElement('a');
+        a.className = 'drop__file';
+        a.href = d.image;
+        a.download = d.file_name || '';
+        const clipSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = d.file_name || 'file';
+        a.innerHTML = clipSvg;
+        a.appendChild(nameSpan);
+        bubble.appendChild(a);
+      }
     }
     const time = document.createElement('div');
     time.className = 'drop__time';

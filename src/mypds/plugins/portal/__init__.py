@@ -40,12 +40,7 @@ _BSKY_API = "https://public.api.bsky.app/xrpc"
 _SESSION_COOKIE = "portal_visitor"
 _NONCE_TTL = 600  # seconds
 
-_ALLOWED_IMG = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/gif": ".gif",
-    "image/webp": ".webp",
-}
+_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 # room_did -> [asyncio.Queue, ...]
 _streams: dict = {}
@@ -75,6 +70,8 @@ def _ensure_tables():
     cols = {r[1] for r in con.execute("PRAGMA table_info(portal_drop)").fetchall()}
     if "image_path" not in cols:
         con.execute("ALTER TABLE portal_drop ADD COLUMN image_path TEXT")
+    if "file_name" not in cols:
+        con.execute("ALTER TABLE portal_drop ADD COLUMN file_name TEXT")
     con.commit()
 
 
@@ -363,10 +360,16 @@ async def portal_room(request: web.Request):
     owner_row = db.con.execute("SELECT did, handle FROM user LIMIT 1").fetchone()
     owner_did, owner_handle = (owner_row[0], owner_row[1]) if owner_row else ("", "")
 
-    drops = _get_con().execute(
-        "SELECT id, author, content, created_at, image_path FROM portal_drop WHERE room_did=? ORDER BY created_at ASC",
+    _IMG_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    raw = _get_con().execute(
+        "SELECT id, author, content, created_at, image_path, file_name FROM portal_drop WHERE room_did=? ORDER BY created_at ASC",
         (room_did,),
     ).fetchall()
+    drops = []
+    for row in raw:
+        ip = row[4]
+        is_img = bool(ip and os.path.splitext(ip)[1].lower() in _IMG_EXTS)
+        drops.append((row[0], row[1], row[2], row[3], ip, row[5], is_img))
 
     if visitor_did == room_did:
         _get_con().execute("UPDATE portal_visitor SET last_seen=datetime('now') WHERE did=?", (room_did,))
@@ -415,19 +418,26 @@ async def portal_drop(request: web.Request):
     content = data.get("content", "").strip()[:500]
 
     image_path = None
+    is_image = False
+    orig_name = None
     img_field = data.get("image")
     if img_field and hasattr(img_field, "filename") and img_field.filename:
-        ct = img_field.content_type or ""
-        ext = _ALLOWED_IMG.get(ct, "")
-        if ext:
-            fname = secrets.token_hex(10) + ext
-            portal_dir = os.path.join(MEDIA_DIR, "portal")
-            os.makedirs(portal_dir, exist_ok=True)
-            img_bytes = img_field.file.read()
-            if 0 < len(img_bytes) <= 10 * 1024 * 1024:
-                with open(os.path.join(portal_dir, fname), "wb") as f:
-                    f.write(img_bytes)
-                image_path = fname
+        ct = (img_field.content_type or "").split(";")[0].strip()
+        orig_name = img_field.filename
+        orig_ext = os.path.splitext(orig_name)[1].lower()
+        if orig_ext and 1 < len(orig_ext) <= 10 and orig_ext[1:].isalnum():
+            ext = orig_ext
+        else:
+            ext = mimetypes.guess_extension(ct) or ".bin"
+        fname = secrets.token_hex(10) + ext
+        portal_dir = os.path.join(MEDIA_DIR, "portal")
+        os.makedirs(portal_dir, exist_ok=True)
+        img_bytes = img_field.file.read()
+        if 0 < len(img_bytes) <= 10 * 1024 * 1024:
+            with open(os.path.join(portal_dir, fname), "wb") as f:
+                f.write(img_bytes)
+            image_path = fname
+            is_image = ct in _IMAGE_TYPES
 
     if not content and not image_path:
         raise web.HTTPFound(f"/portal/room/{room_did}")
@@ -439,8 +449,8 @@ async def portal_drop(request: web.Request):
 
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     cur = _get_con().execute(
-        "INSERT INTO portal_drop (room_did, author, content, image_path) VALUES (?,?,?,?)",
-        (room_did, author, content, image_path),
+        "INSERT INTO portal_drop (room_did, author, content, image_path, file_name) VALUES (?,?,?,?,?)",
+        (room_did, author, content, image_path, orig_name if image_path else None),
     )
     _get_con().commit()
 
@@ -450,6 +460,8 @@ async def portal_drop(request: web.Request):
         "author": author,
         "content": content,
         "image": f"/portal/img/{image_path}" if image_path else None,
+        "is_image": is_image,
+        "file_name": orig_name if image_path else None,
         "created_at": now_str,
     })
 
