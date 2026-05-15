@@ -18,7 +18,7 @@ from aiohttp import web
 
 from mypds import static_config
 from mypds.app_util import get_db, get_client
-from mypds.web import get_session, render
+from mypds.web import get_session, render, get_web_store
 from mypds.web_store import MEDIA_DIR
 
 _DB_PATH = static_config.DATA_DIR + "/plugins/portal.sqlite3"
@@ -39,6 +39,34 @@ routes = web.RouteTableDef()
 _BSKY_API = "https://public.api.bsky.app/xrpc"
 _SESSION_COOKIE = "portal_visitor"
 _NONCE_TTL = 600  # seconds
+
+SETTINGS = [
+    {
+        "key": "access_mode",
+        "type": "select",
+        "label": "Access mode",
+        "description": "Who can enter the portal. Whitelist: only listed handles. Blacklist: everyone except listed handles.",
+        "default": "open",
+        "options": [("open", "Open (anyone with a Bluesky account)"), ("whitelist", "Whitelist only"), ("blacklist", "Block listed handles")],
+        "group": "access",
+    },
+    {
+        "key": "allow_list",
+        "type": "text",
+        "label": "Whitelist",
+        "description": "One handle or DID per line. Only these accounts can enter when mode is Whitelist.",
+        "default": "",
+        "group": "access",
+    },
+    {
+        "key": "block_list",
+        "type": "text",
+        "label": "Blocklist",
+        "description": "One handle or DID per line. These accounts are denied entry when mode is Blacklist.",
+        "default": "",
+        "group": "access",
+    },
+]
 
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
@@ -103,6 +131,10 @@ def _get_visitor_did(request) -> Optional[str]:
         return None
     secret = get_db(request).config.get("jwt_access_secret", "")
     return _check_token(secret, token)
+
+
+def _parse_list(raw: str) -> set:
+    return {line.strip().lstrip("@").lower() for line in raw.splitlines() if line.strip()}
 
 
 async def _resolve_handle(client, handle: str) -> Optional[str]:
@@ -218,6 +250,21 @@ async def portal_enter_post(request: web.Request):
     kicked = _get_con().execute("SELECT did FROM portal_kicked WHERE did=?", (did,)).fetchone()
     if kicked:
         return render(request, "plugin/portal/enter.html", {"error": "access revoked"})
+
+    ws = get_web_store(request)
+    mode = ws.get_plugin_setting("portal", "access_mode") or "open"
+    if mode == "whitelist":
+        allow_raw = ws.get_plugin_setting("portal", "allow_list")
+        allowed = _parse_list(allow_raw)
+        handle_norm = handle.lstrip("@").strip().lower()
+        if did.lower() not in allowed and handle_norm not in allowed:
+            return render(request, "plugin/portal/enter.html", {"error": "this portal is invite-only"})
+    elif mode == "blacklist":
+        block_raw = ws.get_plugin_setting("portal", "block_list")
+        blocked = _parse_list(block_raw)
+        handle_norm = handle.lstrip("@").strip().lower()
+        if did.lower() in blocked or handle_norm in blocked:
+            return render(request, "plugin/portal/enter.html", {"error": "access denied"})
 
     profile = await _fetch_profile(client, did)
     nonce = secrets.token_hex(4).upper()
