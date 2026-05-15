@@ -853,15 +853,21 @@ async def run(
 			for attempt in range(5):
 				await asyncio.sleep(attempt * 8)  # 0, 8, 16, 24, 32s
 				try:
-					async with client.post(
-						"https://bsky.network/xrpc/com.atproto.sync.requestCrawl",
-						json={"hostname": hostname},
-						timeout=aiohttp.ClientTimeout(total=10),
-					) as resp:
-						if resp.status == 200:
-							logger.info(f"relay crawl ok for {hostname} (attempt {attempt+1})")
-							return
-						logger.info(f"relay crawl {resp.status} attempt {attempt+1}, retrying…")
+					crawlers = ["https://bsky.network", "https://vsky.network"]
+					results = []
+					for crawler in crawlers:
+						try:
+							async with client.post(
+								f"{crawler}/xrpc/com.atproto.sync.requestCrawl",
+								json={"hostname": hostname},
+								timeout=aiohttp.ClientTimeout(total=10),
+							) as resp:
+								results.append(f"{crawler}={resp.status}")
+						except Exception as ce:
+							results.append(f"{crawler}=err({ce})")
+					logger.info(f"relay crawl attempt {attempt+1}: {', '.join(results)}")
+					if any("=200" in r for r in results):
+						return
 				except Exception as e:
 					logger.info(f"relay crawl attempt {attempt+1} failed: {e}, retrying…")
 		except Exception as e:
