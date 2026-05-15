@@ -4,6 +4,67 @@ This file is for AI agents. Follow it top-to-bottom to go from zero to a live, f
 
 ---
 
+## THIS INSTANCE — mypds.mycrab.space restart runbook
+
+**Two separate processes must both be running.** If the site shows Cloudflare error 1033, one of them is dead.
+
+### Check status
+```bash
+# Is the Python server up?
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3030/
+# Expected: 200. Anything else (or connection refused) = server dead.
+
+# Is the tunnel up?
+ps aux | grep "27446145" | grep -v grep
+# No output = tunnel dead.
+```
+
+### Restart Python server
+```bash
+# Kill everything (orphaned plugin subprocesses too)
+ps aux | grep "mypds\|plugin_runner" | grep -v grep | awk '{print $2}' | xargs -r kill -9
+
+# Remove stale Unix sockets
+rm -f /home/claude/mycrabs/millipds/data/plugins/*.sock
+
+# Start fresh
+cd /home/claude/mycrabs/millipds && python3 -m mypds run --listen_port=3030 >> /tmp/mypds.log 2>&1 &
+
+# Wait ~8s for all plugins to load, then verify
+sleep 8 && curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3030/
+```
+
+### Restart Cloudflare tunnel
+```bash
+cloudflared tunnel --config /home/claude/.cloudflared/mypds.yml run 27446145-5516-4296-a10a-bf32cabd9afd >> /tmp/mypds-tunnel.log 2>&1 &
+sleep 3 && tail -3 /tmp/mypds-tunnel.log
+# Expected: "Registered tunnel connection" lines
+```
+
+### Restart both (full reset)
+```bash
+ps aux | grep "mypds\|plugin_runner" | grep -v grep | awk '{print $2}' | xargs -r kill -9
+rm -f /home/claude/mycrabs/millipds/data/plugins/*.sock
+cd /home/claude/mycrabs/millipds && python3 -m mypds run --listen_port=3030 >> /tmp/mypds.log 2>&1 &
+sleep 8
+cloudflared tunnel --config /home/claude/.cloudflared/mypds.yml run 27446145-5516-4296-a10a-bf32cabd9afd >> /tmp/mypds-tunnel.log 2>&1 &
+sleep 3 && curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3030/
+```
+
+| Thing | Value |
+|-------|-------|
+| Working dir | `/home/claude/mycrabs/millipds` |
+| Port | `3030` |
+| Public URL | `https://mypds.mycrab.space` |
+| Server log | `/tmp/mypds.log` |
+| Tunnel config | `/home/claude/.cloudflared/mypds.yml` |
+| Tunnel ID | `27446145-5516-4296-a10a-bf32cabd9afd` |
+| Tunnel log | `/tmp/mypds-tunnel.log` |
+
+---
+
+---
+
 ## Step 0 — Choose deployment modality
 
 **Ask the user which modality they want before doing anything else.** The answer determines domain, tunnel, and DNS setup for all subsequent steps.
