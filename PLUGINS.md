@@ -11,15 +11,19 @@ This guide uses a plugin called `pub.notes.entry` ("notes") as a worked example.
 ```
 src/mypds/plugins/
 └── notes/
-    ├── __init__.py       # APP_NAME, NSID, routes, DB helpers
+    ├── __init__.py       # APP_NAME, NSID, SETTINGS, routes, DB helpers
+    ├── __main__.py       # subprocess entry point (2 lines, always identical)
     └── templates/
         ├── main.html     # public listing page
         ├── new.html      # owner create form
         ├── tile.html     # dashboard app tile (auto-injected)
-        └── nav.html      # nav <li> entry  (auto-injected)
+        ├── nav.html      # nav <li> entry  (auto-injected)
+        └── widget.html   # (optional) homepage sidebar widget
 ```
 
 That's it. Drop the folder in, restart mypds — the plugin appears in the dashboard and nav.
+
+Each plugin runs as an **isolated subprocess** over a Unix socket at `data/plugins/{name}.sock`. The main process proxies requests to it. Toggling a plugin on/off spawns/kills its subprocess.
 
 ---
 
@@ -38,6 +42,16 @@ No core file edits needed.
 
 ---
 
+## `__main__.py` (always identical — 2 lines)
+
+```python
+from mypds.plugins.notes import routes, APP_NAME
+from mypds.plugin_runner import run_plugin
+run_plugin(routes, APP_NAME)
+```
+
+---
+
 ## `__init__.py`
 
 ```python
@@ -49,7 +63,34 @@ from mypds.web import render, get_session, get_web_store, get_node_profile
 from mypds import repo_ops, atproto_repo, util
 
 APP_NAME = "notes"
-NSID     = "pub.notes.entry"
+NSID     = "pub.notes.entry"   # set None if no ATProto collection
+
+# Optional: declare configurable settings.
+# Rendered automatically at /plugins/notes/settings — no extra code needed.
+SETTINGS = [
+    {
+        "key":         "public_page",
+        "type":        "bool",          # bool | str | int | select | text
+        "label":       "Public page",
+        "description": "Allow visitors to see /notes without logging in.",
+        "default":     "0",
+        "group":       "visibility",    # optional — groups settings into panels
+    },
+    {
+        "key":     "feed_limit",
+        "type":    "select",
+        "label":   "Feed size",
+        "default": "50",
+        "options": [("20", "20"), ("50", "50"), ("100", "100")],
+        "group":   "display",
+    },
+]
+
+# Read a setting anywhere in the plugin:
+#   ws = get_web_store(request)
+#   val = ws.get_plugin_setting("notes", "public_page")   # returns "0" or "1"
+# Settings are also available in ALL templates as:
+#   {{ node_settings.plugin_notes_public_page }}
 
 routes = web.RouteTableDef()
 
@@ -193,6 +234,8 @@ Templates reference their own namespace: `plugin/notes/main.html`.
 
 ### `templates/tile.html` — dashboard tile
 
+Include a gear icon linking to `/plugins/notes/settings` when the plugin has `SETTINGS` defined:
+
 ```html
 <div class="app-tile {% if not apps.notes %}app-tile--off{% endif %}">
   <div class="app-tile__icon">
@@ -202,7 +245,18 @@ Templates reference their own namespace: `plugin/notes/main.html`.
       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
     </svg>
   </div>
-  <div class="app-tile__name"><a href="/notes" style="color:var(--text)">notes</a></div>
+  <div class="app-tile__name">
+    <a href="/notes" style="color:var(--text)">notes</a>
+    {% if apps.notes %}
+    <a href="/plugins/notes/settings" title="settings" style="margin-left:6px;color:var(--dim);text-decoration:none;font-size:.7rem;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </a>
+    {% endif %}
+  </div>
   <div class="app-tile__status" style="color:var(--cyan);">pub.notes.entry</div>
   <form method="post" action="/apps/notes/toggle" style="margin-top:6px;">
     <button class="app-toggle {% if apps.notes %}app-toggle--on{% endif %}" type="submit" style="cursor:pointer;">
@@ -224,6 +278,7 @@ Templates reference their own namespace: `plugin/notes/main.html`.
 
 | Rule | Detail |
 |------|--------|
+| **`__main__.py` required** | Without it the plugin won't spawn as a subprocess — 2 lines, always identical |
 | **No Python floats in ATProto records** | cbrrr atjson mode rejects them. Store coords as `f"{val:.6f}"` strings, parse back with `float()` on read |
 | **Always use `repo_ops.apply_writes()`** | Signs the record, updates MST, emits firehose event |
 | **Always broadcast** | `await atproto_repo.firehose_broadcast(request, (seq, fbytes))` after every write |
@@ -231,14 +286,16 @@ Templates reference their own namespace: `plugin/notes/main.html`.
 | **No emoji icons** | Use inline SVG (Heroicons / Lucide paths) |
 | **Auth guard** | Check `get_session(request)` on all owner routes |
 | **App enabled guard** | Check `ws.get_app_enabled(APP_NAME)` on public routes — raise `HTTPNotFound()` if off |
+| **Settings** | Declare `SETTINGS = [...]` in `__init__.py`; the main process serves `/plugins/{name}/settings` automatically — no extra routes or templates needed |
 
 ---
 
-## Reference implementation
+## Reference implementations
 
-The built-in `places` app uses the same patterns:
-- `PLACES_NSID` in `web.py`
-- Routes at `/places`, `/places/new`, `/places/{rkey}/delete`
-- Templates `node_places.html`, `node_places_new.html`
-
-Use it as a reference for blob uploads: see `_store_blob()` and `_get_gallery()` in `web.py`.
+| Plugin | What to look at |
+|--------|-----------------|
+| `places` | ATProto record write + blob storage |
+| `gallery` | Image upload, blob handling |
+| `pages` | Own SQLite DB, Markdown, optional ATProto sync |
+| `activity` | `SETTINGS` list, domain filter, TID timestamp extraction |
+| `dropbox` | Own SQLite DB, file inbox |
