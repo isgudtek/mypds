@@ -31,14 +31,15 @@ class WebStore:
 	def _migrate(self):
 		"""Add columns to existing DB files that predate schema additions."""
 		existing = {row[1] for row in self.con.execute("PRAGMA table_info(page)").fetchall()}
-		for col, defn in [
-			("published_at",  "INTEGER"),
-			("at_rkey",       "TEXT"),
-			("at_uri",        "TEXT"),
-			("password_hash", "TEXT"),
-		]:
-			if col not in existing:
-				self.con.execute(f"ALTER TABLE page ADD COLUMN {col} {defn}")
+		if existing:  # skip if page table doesn't exist (lives in pages plugin DB)
+			for col, defn in [
+				("published_at",  "INTEGER"),
+				("at_rkey",       "TEXT"),
+				("at_uri",        "TEXT"),
+				("password_hash", "TEXT"),
+			]:
+				if col not in existing:
+					self.con.execute(f"ALTER TABLE page ADD COLUMN {col} {defn}")
 		# Ensure app_settings table exists (may not exist on older installs)
 		self.con.execute("""
 			CREATE TABLE IF NOT EXISTS app_settings (

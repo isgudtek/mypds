@@ -29,7 +29,9 @@ dependencies = [
 	"docopt",
 	"apsw",
 	"base58",
-	"jinja2"
+	"jinja2",
+	"pyotp",
+	"segno"
 ]
 
 [project.optional-dependencies]
