@@ -55,6 +55,9 @@ class PluginDatabase:
             return {}
         return dict(zip(_CONFIG_FIELDS, row))
 
+    def new_con(self):
+        return self.con
+
 
 # ── Jinja helpers ─────────────────────────────────────────────────────────────
 
