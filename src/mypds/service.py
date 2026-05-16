@@ -228,24 +228,43 @@ async def well_known_atproto_did(request: web.Request):
 
 @routes.get(
 	"/.well-known/did.json"
-)  # serve this server's did:web document (nb: reference PDS impl doesn't do this, hard to know the right thing to do)
+)  # serve this server's did:web document
 async def well_known_did_web(request: web.Request):
-	cfg = get_db(request).config
-	return web.json_response(
-		{
-			"@context": [
-				"https://www.w3.org/ns/did/v1",
-			],
-			"id": cfg["pds_did"],
-			"service": [
-				{  # is this the right thing to do?
-					"id": "#atproto_pds",
-					"type": "AtprotoPersonalDataServer",
-					"serviceEndpoint": cfg["pds_pfx"],
-				}
-			],
-		}
-	)
+	db = get_db(request)
+	cfg = db.config
+	pds_did = cfg["pds_did"]
+
+	doc: dict = {
+		"@context": [
+			"https://www.w3.org/ns/did/v1",
+			"https://w3id.org/security/multikey/v1",
+		],
+		"id": pds_did,
+		"alsoKnownAs": [f"at://{cfg['pds_pfx'].replace('https://', '').replace('http://', '').rstrip('/')}"],
+		"service": [
+			{
+				"id": "#atproto_pds",
+				"type": "AtprotoPersonalDataServer",
+				"serviceEndpoint": cfg["pds_pfx"],
+			}
+		],
+	}
+
+	# Include user signing key if a user's DID matches the PDS DID (did:web single-user setup)
+	pem = db.signing_key_pem_by_did(pds_did)
+	if pem:
+		pubkey = crypto.privkey_from_pem(pem).public_key()
+		multibase = crypto.encode_pubkey_as_did_key(pubkey).removeprefix("did:key:")
+		doc["verificationMethod"] = [
+			{
+				"id": f"{pds_did}#atproto",
+				"type": "Multikey",
+				"controller": pds_did,
+				"publicKeyMultibase": multibase,
+			}
+		]
+
+	return web.json_response(doc)
 
 
 @routes.get("/robots.txt")
