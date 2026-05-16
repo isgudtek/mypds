@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2FA Setup · millipds</title>
+<link rel="stylesheet" href="/static/node.css">
+<style>
+.totp-wrap { max-width: 480px; margin: 60px auto; padding: 0 16px; }
+.totp-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 32px; }
+.totp-box h1 { margin: 0 0 6px; font-size: 1.25rem; }
+.totp-box p  { margin: 0 0 24px; color: var(--dim); font-size: .875rem; }
+.qr-wrap     { display: flex; justify-content: center; margin: 20px 0; }
+.qr-wrap img { border-radius: 8px; background: #fff; padding: 8px; display: block; }
+.secret-code { font-family: var(--mono); font-size: .9rem; letter-spacing: .15em; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; text-align: center; margin: 16px 0; word-break: break-all; }
+.divider     { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+.btn-danger  { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: .875rem; }
+.btn-danger:hover { background: #b91c1c; }
+</style>
+</head>
+<body>
+<div class="totp-wrap">
+  <div class="totp-box">
+    <h1>Two-Factor Authentication</h1>
+    <p>Scan the QR code with your authenticator app, then confirm with a code.</p>
+
+    {% if error %}
+    <div class="alert alert--error" style="margin-bottom:16px">{{ error }}</div>
+    {% endif %}
+
+    {% if qr_url %}
+    <div class="qr-wrap"><img src="{{ qr_url }}" alt="TOTP QR code" width="220" height="220"></div>
+    {% endif %}
+
+    <div class="secret-code">{{ secret }}</div>
+    <p style="font-size:.75rem;color:var(--dim);text-align:center;margin:-8px 0 16px">
+      Manual entry key — add to your authenticator app
+    </p>
+
+    <form method="post" action="/totp/setup">
+      <div class="form-group">
+        <label>Verification code</label>
+        <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9 ]*"
+               maxlength="7" placeholder="000 000" autocomplete="one-time-code" autofocus required>
+      </div>
+      <button class="btn btn--primary" type="submit" style="width:100%;justify-content:center;">
+        Activate 2FA →
+      </button>
+    </form>
+
+    {% if has_secret %}
+    <hr class="divider">
+    <p style="font-size:.875rem;color:var(--dim);">
+      2FA is currently <strong>active</strong>. Completing setup above will replace the existing secret.
+    </p>
+    <form method="post" action="/totp/remove" onsubmit="return confirm('Disable 2FA?')">
+      <button class="btn-danger" type="submit">Disable 2FA</button>
+    </form>
+    {% endif %}
+
+    <div style="margin-top:24px;font-size:.75rem;color:var(--dim);font-family:var(--mono);">
+      <a href="/dashboard" style="color:var(--dim);">← back to dashboard</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -22,6 +22,7 @@ from . import atproto_repo
 from . import util
 from .app_util import get_db, get_jinja_env, get_firehose_queues, get_firehose_queues_lock
 from .web_store import WebStore, MEDIA_DIR
+from .totp_util import make_preauth
 
 web_routes = web.RouteTableDef()
 
@@ -352,6 +353,12 @@ async def login_post(request: web.Request):
 
 	if first_run:
 		ws.mark_initialized()
+
+	# TOTP check: if plugin active and secret configured, redirect to TOTP verify step
+	totp_secret = ws.get_plugin_setting("totp", "secret")
+	if ws.get_app_enabled("totp") and totp_secret:
+		preauth = make_preauth(did, handle, next_url, db.config.jwt_access_secret)
+		return redirect(f"/totp/verify?t={preauth}")
 
 	token = ws.create_session(did, handle)
 	resp = redirect(next_url)
