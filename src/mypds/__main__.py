@@ -2,6 +2,7 @@
 
 Usage:
   mypds init <hostname> [--dev | --sandbox] [--auth_host=HOST]
+  mypds setup <hostname> [--handle=HANDLE] [--plc=URL] [--unsafe_password=PW]
   mypds config [--pds_pfx=URL] [--pds_did=DID] [--auth_pfx=URL] [--bsky_appview_pfx=URL] [--bsky_appview_did=DID]
   mypds account create <did> <handle> [--unsafe_password=PW] [--signing_key=PEM]
   mypds run [--sock_path=PATH] [--listen_host=HOST] [--listen_port=PORT]
@@ -66,6 +67,11 @@ import json
 import base64
 import hashlib
 import urllib.parse
+import urllib.request
+import urllib.error
+import os
+import secrets
+import sys
 from getpass import getpass
 
 from docopt import docopt
@@ -131,6 +137,98 @@ def main():
 		assert db.config_is_initialised()
 		db.print_config()
 		return
+
+	elif args["setup"]:
+		hostname = args["<hostname>"]
+		handle   = args.get("--handle") or hostname
+		plc_host = (args.get("--plc") or "https://plc.directory").rstrip("/")
+		pds_pfx  = f"https://{hostname}"
+
+		os.makedirs("data", exist_ok=True)
+
+		# Check not already initialised
+		db = database.Database()
+		if db.config_is_initialised():
+			print("Already initialised! Use `mypds config` to make changes.")
+			return
+
+		# 1. Generate rotation key — master identity key, must be kept offline
+		rotation_privkey = crypto.keygen_p256()
+		rotation_pem     = crypto.privkey_to_pem(rotation_privkey)
+
+		# 2. Generate repo signing key → data/repo_key.pem (stays on server)
+		repo_privkey = crypto.keygen_p256()
+		with open("data/repo_key.pem", "w") as f:
+			f.write(crypto.privkey_to_pem(repo_privkey))
+
+		# 3. Build PLC genesis operation (mirrors util plcgen logic)
+		genesis = {
+			"type": "plc_operation",
+			"rotationKeys": [crypto.encode_pubkey_as_did_key(rotation_privkey.public_key())],
+			"verificationMethods": {"atproto": crypto.encode_pubkey_as_did_key(repo_privkey.public_key())},
+			"alsoKnownAs": [f"at://{handle}"],
+			"services": {
+				"atproto_pds": {
+					"type": "AtprotoPersonalDataServer",
+					"endpoint": pds_pfx,
+				}
+			},
+			"prev": None,
+		}
+		genesis["sig"] = crypto.plc_sign(rotation_privkey, genesis)
+		genesis_digest = hashlib.sha256(cbrrr.encode_dag_cbor(genesis)).digest()
+		did = "did:plc:" + base64.b32encode(genesis_digest)[:24].lower().decode()
+
+		# 4. Submit genesis to PLC directory
+		plc_url     = f"{plc_host}/{did}"
+		genesis_json = json.dumps(genesis).encode()
+		try:
+			req = urllib.request.Request(
+				plc_url, data=genesis_json,
+				headers={"Content-Type": "application/json"}, method="POST",
+			)
+			urllib.request.urlopen(req, timeout=15)
+		except urllib.error.HTTPError as e:
+			body = e.read().decode()
+			print(f"ERROR: PLC registration failed ({e.code}): {body}", file=sys.stderr)
+			sys.exit(1)
+		except Exception as e:
+			print(f"ERROR: Could not reach PLC directory: {e}", file=sys.stderr)
+			sys.exit(1)
+
+		# 5. Initialise database config (did:plc — not did:web)
+		db.update_config(
+			pds_pfx=pds_pfx,
+			pds_did=did,
+			auth_pfx=pds_pfx,
+			bsky_appview_pfx="https://api.bsky.app",
+			bsky_appview_did="did:web:api.bsky.app",
+		)
+
+		# 6. Create account
+		pw = args.get("--unsafe_password") or secrets.token_urlsafe(16)
+		db.create_account(did=did, handle=handle, password=pw, privkey=repo_privkey)
+
+		# 7. Save rotation key (user must back this up — not needed on server)
+		rotation_key_path = f"data/{handle}_rotation_key.pem"
+		with open(rotation_key_path, "w") as f:
+			f.write(rotation_pem)
+
+		# 8. Print summary
+		print(f"\n✅  mypds setup complete")
+		print(f"    DID:      {did}")
+		print(f"    Handle:   {handle}")
+		print(f"    Password: {pw}")
+		print(f"    PDS:      {pds_pfx}")
+		print(f"\n⚠️   BACKUP THIS FILE (rotation key — master identity key):")
+		print(f"    {rotation_key_path}")
+		print(f"\nNext steps:")
+		print(f"  1. DNS — add TXT record:  _atproto.{handle}  →  did={did}")
+		print(f"  2. Start server:  mypds run --listen_port=8080")
+		print(f"  3. After server is live, request crawl:")
+		print(f'     curl -X POST https://bsky.network/xrpc/com.atproto.sync.requestCrawl --json \'{{"hostname":"{hostname}"}}\'')
+		return
+
 	elif args["util"]:
 		if args["keygen"]:  # TODO: deprecate in favour of openssl?
 			if args["--k256"]:

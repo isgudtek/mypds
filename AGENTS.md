@@ -161,31 +161,49 @@ mypds --help
 
 ---
 
-## Step 2 — Create the ATProto identity (DID)
+## Step 2 — Create identity & initialise database
 
-> By this point you must have: `$PDS_URL` (HTTPS, live), `$HANDLE` (final handle including optional vanity domain).
+> By this point you must have: `$DOMAIN` (your PDS hostname, e.g. `alice.example.com`). The PDS URL does **not** need to be live yet — DNS can be set up after.
+
+Run one command from your working directory (where mypds will store its `data/` folder):
 
 ```bash
-git clone https://github.com/isgudtek/mypds /tmp/mypds-setup
-cd /tmp/mypds-setup
-
-./test_data/create_identity.sh "$HANDLE" "$PDS_URL" https://plc.directory
+cd /opt/mypds
+mypds setup "$DOMAIN"
+# or with a separate handle:
+# mypds setup "$DOMAIN" --handle="$HANDLE"
 ```
+
+This command:
+- Generates a rotation key (master identity key) and a repo signing key
+- Registers a `did:plc` identity with the global PLC directory (`plc.directory`)
+- Initialises the SQLite database with the correct config
+- Creates your account (prints a random password if none given)
 
 Successful output:
 ```
-Created identity for alice.example.com at https://plc.directory/did:plc:xxxxxxxxxxxx
-rotation key → alice.example.com_rotation_key.pem   ← STORE SAFELY, NEVER ON SERVER
-repo signing key → alice.example.com_repo_key.pem   ← needed on server
-did:plc string → alice.example.com_did.txt
+✅  mypds setup complete
+    DID:      did:plc:xxxxxxxxxxxxxxxxxxxx
+    Handle:   alice.example.com
+    Password: <generated or provided>
+    PDS:      https://alice.example.com
+
+⚠️   BACKUP THIS FILE (rotation key — master identity key):
+    data/alice.example.com_rotation_key.pem
+
+Next steps:
+  1. DNS — add TXT record:  _atproto.alice.example.com  →  did=did:plc:xxx
+  2. Start server:  mypds run --listen_port=8080
+  3. After server is live, request crawl: ...
 ```
 
-**Tell the user:** The rotation key is their master identity key. They must save it offline and keep it off the server. If it's lost, the DID cannot be recovered.
+**Tell the user:** Back up `data/<handle>_rotation_key.pem` offline immediately. This is the master identity key — it cannot be regenerated and loss means the DID cannot be recovered.
 
 ```bash
-cp "${HANDLE}_repo_key.pem" /opt/mypds/repo_key.pem
-chmod 600 /opt/mypds/repo_key.pem
-DID=$(cat "${HANDLE}_did.txt")
+# Capture DID for later steps
+DID=$(grep "DID:" /tmp/mypds-setup-output.txt | awk '{print $2}')
+# or read from DB:
+# python3 -c "import apsw; c=apsw.Connection('data/mypds.sqlite3'); print(list(c.execute('SELECT pds_did FROM config'))[0][0])"
 ```
 
 ---
@@ -211,35 +229,7 @@ curl "https://$HANDLE/.well-known/atproto-did"
 
 ---
 
-## Step 4 — Initialize the database
-
-```bash
-source /opt/mypds/.venv/bin/activate
-
-# Initialize: sets pds_did, creates tables
-mypds init "$DOMAIN"
-
-# Optional: if you have a pre-generated DID, set it now:
-# python3 -c "import sqlite3; con=sqlite3.connect('/opt/mypds/data/mypds.sqlite3'); con.execute('UPDATE config SET pds_did=?', ('did:plc:xxx',)); con.commit()"
-```
-
-The `init` command sets `pds_did = did:web:<DOMAIN>` automatically. The database is now ready.
-
----
-
-## Step 4b — Create the account
-
-```bash
-mypds account create "$DID" "$HANDLE" \
-  --signing_key=/opt/mypds/repo_key.pem \
-  --unsafe_password=changeme123
-```
-
-Default password is `changeme123` — tell the user to change it after first login. The `--unsafe_password` flag skips interactive prompting.
-
----
-
-## Step 5 — Start mypds
+## Step 4 — Start mypds
 
 ### Quick start (foreground / testing)
 ```bash
@@ -247,7 +237,7 @@ source /opt/mypds/.venv/bin/activate
 mypds run --listen_host=127.0.0.1 --listen_port=8080
 ```
 
-All config (pds_did, pds_pfx, etc.) is read from the DB created in Step 4. No flags needed beyond listen address.
+All config (pds_did, pds_pfx, etc.) is read from the DB created in Step 2. No flags needed beyond listen address.
 
 ### Production — systemd service
 
@@ -280,7 +270,7 @@ curl -s http://localhost:8080/xrpc/com.atproto.server.describeServer | python3 -
 
 ---
 
-## Step 6 — Tell the relay you exist
+## Step 5 — Tell the relay you exist
 
 The Bluesky relay does not auto-discover new PDSes. Request a crawl:
 
@@ -294,13 +284,13 @@ mypds also does this automatically on startup (5 attempts, 0/8/16/24/32s backoff
 
 ---
 
-## Step 7 — Trigger identity + account events
+## Step 6 — Trigger identity + account events
 
 The appview won't index you until it sees events on the firehose:
 
 1. Log into **bsky.app** → Advanced → use custom PDS: `$PDS_URL`
    - Handle: `$HANDLE`
-   - Password: set in Step 4
+   - Password: printed by `mypds setup` in Step 2
 
 2. **Settings → Handle → "Change" it to the same value.** This emits an `#identity` event to the firehose — required for the relay to associate your DID with the PDS.
 
@@ -310,7 +300,7 @@ The appview won't index you until it sees events on the firehose:
 
 ---
 
-## Step 8 — Access the web UI
+## Step 7 — Access the web UI
 
 Open `$PDS_URL` in a browser:
 
