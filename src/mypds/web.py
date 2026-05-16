@@ -25,6 +25,56 @@ from .web_store import WebStore, MEDIA_DIR
 
 web_routes = web.RouteTableDef()
 
+# ── Login rate limiter ────────────────────────────────────────────────────────
+# {ip: {"fails": int, "locked_until": float, "window_start": float, "lockouts": int}}
+_login_state: dict = {}
+_LOGIN_MAX_FAILS = 3
+_LOGIN_WINDOW = 60.0   # seconds before fail counter resets
+_LOGIN_BASE_LOCKOUT = 60  # seconds for first lockout; doubles each time, cap 3600
+
+
+def _get_client_ip(request: web.Request) -> str:
+	return (
+		request.headers.get("CF-Connecting-IP") or
+		request.headers.get("X-Real-IP") or
+		(request.headers.get("X-Forwarded-For", "").split(",")[0].strip()) or
+		request.remote or
+		"unknown"
+	)
+
+
+def _check_login_locked(ip: str) -> tuple[bool, int]:
+	now = time.monotonic()
+	state = _login_state.get(ip)
+	if not state:
+		return False, 0
+	if state["locked_until"] > now:
+		return True, int(state["locked_until"] - now)
+	if now - state["window_start"] > _LOGIN_WINDOW:
+		_login_state.pop(ip, None)
+	return False, 0
+
+
+def _record_login_fail(ip: str) -> tuple[bool, int]:
+	now = time.monotonic()
+	state = _login_state.setdefault(ip, {"fails": 0, "locked_until": 0.0, "window_start": now, "lockouts": 0})
+	if now - state["window_start"] > _LOGIN_WINDOW and state["locked_until"] <= now:
+		state.update({"fails": 0, "window_start": now})
+	state["fails"] += 1
+	if state["fails"] >= _LOGIN_MAX_FAILS:
+		state["lockouts"] += 1
+		duration = min(_LOGIN_BASE_LOCKOUT * (2 ** (state["lockouts"] - 1)), 3600)
+		state["locked_until"] = now + duration
+		state["fails"] = 0
+		state["window_start"] = now
+		return True, duration
+	return False, 0
+
+
+def _record_login_success(ip: str) -> None:
+	_login_state.pop(ip, None)
+
+
 # ── App keys ──────────────────────────────────────────────────────────────────
 
 MILLIPDS_WEB_STORE = web.AppKey("MILLIPDS_WEB_STORE", WebStore)
@@ -271,6 +321,13 @@ async def login_post(request: web.Request):
 	if not next_url.startswith("/"):
 		next_url = "/dashboard"
 
+	ip = _get_client_ip(request)
+	locked, secs = _check_login_locked(ip)
+	if locked:
+		mins = secs // 60
+		wait = f"{mins}m {secs % 60}s" if mins else f"{secs}s"
+		return render(request, "node_login.html", {"error": f"Too many failed attempts. Try again in {wait}.", "next": next_url}, status=429)
+
 	db = get_db(request)
 	ws = get_web_store(request)
 	first_run = not ws.is_initialized()
@@ -278,9 +335,20 @@ async def login_post(request: web.Request):
 	try:
 		did, handle = db.verify_account_login(identifier, password)
 	except (KeyError, ValueError):
+		now_locked, duration = _record_login_fail(ip)
+		if now_locked:
+			mins = duration // 60
+			wait = f"{mins}m {duration % 60}s" if mins else f"{duration}s"
+			error = f"Too many failed attempts. Locked for {wait}."
+		else:
+			state = _login_state.get(ip, {})
+			remaining = _LOGIN_MAX_FAILS - state.get("fails", 0)
+			error = f"Invalid credentials ({remaining} attempt{'s' if remaining != 1 else ''} left)"
 		if first_run:
-			return render(request, "node_init.html", {"error": "Invalid credentials"})
-		return render(request, "node_login.html", {"error": "Invalid credentials", "next": next_url}, status=401)
+			return render(request, "node_init.html", {"error": error})
+		return render(request, "node_login.html", {"error": error, "next": next_url}, status=401)
+
+	_record_login_success(ip)
 
 	if first_run:
 		ws.mark_initialized()
