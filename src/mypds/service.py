@@ -174,10 +174,10 @@ async def atproto_service_proxy_middleware(request: web.Request, handler):
 	res.headers.setdefault(
 		"X-Content-Type-Options", "nosniff"
 	)  # prevent XSS (almost vestigial at this point, I think)
-	if not is_static:
+	if request.path.startswith("/xrpc/"):
 		res.headers.setdefault(
 			"Content-Security-Policy", "default-src 'none'; sandbox"
-		)  # prevent everything for non-static responses
+		)  # lock down XRPC API responses — they're JSON, never HTML
 	# NB: HSTS and other TLS-related headers not set, set them in nginx or wherever you terminate TLS
 
 	return res
