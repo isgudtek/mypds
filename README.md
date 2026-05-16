@@ -34,8 +34,12 @@ All data lives in **your** ATProto repo (MST), propagated on the firehose. Every
 git clone https://github.com/isgudtek/mypds
 cd mypds
 python3 -m pip install -e .
-mypds run --pds-pfx https://your.domain --pds-did-plc https://plc.directory
+mypds init your.domain                          # hostname only, no https://
+mypds account create did:web:your.domain your.domain --unsafe_password=changeme
+mypds run --listen_port=8080                    # match your reverse proxy / tunnel port
 ```
+
+See [`AGENTS.md`](./AGENTS.md) for the full step-by-step guide including DID, tunnel, and relay setup.
 
 ---
 

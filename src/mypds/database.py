@@ -138,6 +138,11 @@ class Database:
 			self.con.execute(
 				"ALTER TABLE oauth_par_request ADD COLUMN response_mode TEXT NOT NULL DEFAULT 'query'"
 			)
+		existing_user_cols = {
+			row[1] for row in self.con.execute("PRAGMA table_info(user)").fetchall()
+		}
+		if "birthdate" not in existing_user_cols:
+			self.con.execute("ALTER TABLE user ADD COLUMN birthdate TEXT")
 
 	def _init_tables(self):
 		logger.info("initing tables")
@@ -189,7 +194,8 @@ class Database:
 				signing_key TEXT NOT NULL,
 				head BLOB NOT NULL,
 				rev TEXT NOT NULL,
-				commit_bytes BLOB NOT NULL
+				commit_bytes BLOB NOT NULL,
+				birthdate TEXT
 			) STRICT
 			"""
 		)

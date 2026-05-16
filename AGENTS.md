@@ -30,7 +30,7 @@ grep "^tunnel:" ~/.cloudflared/<config>.yml
 
 ```bash
 WORK_DIR=<repo working directory>   # e.g. /home/user/mypds
-PORT=<listen port>                  # e.g. 3030
+PORT=<listen port>                  # e.g. 8080
 
 # Kill server + orphaned plugin subprocesses
 ps aux | grep "mypds\|plugin_runner" | grep -v grep | awk '{print $2}' | xargs -r kill -9
@@ -96,7 +96,7 @@ credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
 
 ingress:
   - hostname: pds.example.com
-    service: http://localhost:3030
+    service: http://localhost:8080
   - service: http_status:404
 EOF
 
@@ -122,7 +122,7 @@ server {
     listen 80;
     server_name pds.example.com;
     location / {
-        proxy_pass http://127.0.0.1:3030;
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_http_version 1.1;
         proxy_set_header Connection "upgrade";
@@ -143,6 +143,9 @@ Set: `DOMAIN="pds.example.com"`, `PDS_URL="https://pds.example.com"`, `HANDLE="p
 ---
 
 ## Step 1 — Install mypds
+
+> **Port rule:** mypds must listen on the same port your tunnel/proxy forwards to. All examples below use `8080`. If your tunnel points elsewhere, change `--listen_port` to match — the two must agree or you get 502.
+> If using the mycrab `agent-setup-auto.sh` script, it defaults to `localhost:8080`.
 
 ```bash
 python3 -m venv /opt/mypds/.venv
@@ -241,7 +244,7 @@ Default password is `changeme123` — tell the user to change it after first log
 ### Quick start (foreground / testing)
 ```bash
 source /opt/mypds/.venv/bin/activate
-mypds run --listen_host=127.0.0.1 --listen_port=3030
+mypds run --listen_host=127.0.0.1 --listen_port=8080
 ```
 
 All config (pds_did, pds_pfx, etc.) is read from the DB created in Step 4. No flags needed beyond listen address.
@@ -259,7 +262,7 @@ Type=simple
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=/opt/mypds
-ExecStart=/opt/mypds/.venv/bin/mypds run --listen_host=127.0.0.1 --listen_port=3030
+ExecStart=/opt/mypds/.venv/bin/mypds run --listen_host=127.0.0.1 --listen_port=8080
 
 [Install]
 WantedBy=multi-user.target
@@ -272,7 +275,7 @@ systemctl status mypds
 
 Verify the server is responding:
 ```bash
-curl -s http://localhost:3030/xrpc/com.atproto.server.describeServer | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'DID: {d[\"did\"]}')"
+curl -s http://localhost:8080/xrpc/com.atproto.server.describeServer | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'DID: {d[\"did\"]}')"
 ```
 
 ---
@@ -333,7 +336,7 @@ Open `$PDS_URL` in a browser:
 
 ### Port already in use
 ```bash
-kill $(lsof -ti:3030) 2>/dev/null; sleep 1
+kill $(lsof -ti:8080) 2>/dev/null; sleep 1
 systemctl restart mypds
 ```
 
@@ -365,14 +368,14 @@ cd ~/.cloudflared && cloudflared tunnel --protocol http2 --config mypds.yml run 
 # Restart PDS if dead
 systemctl restart mypds
 # or foreground:
-source /opt/mypds/.venv/bin/activate && mypds run --listen_host=127.0.0.1 --listen_port=3030
+source /opt/mypds/.venv/bin/activate && mypds run --listen_host=127.0.0.1 --listen_port=8080
 ```
 
 Also verify the tunnel config points to TCP (not unix socket):
 ```yaml
 ingress:
   - hostname: pds.example.com
-    service: http://127.0.0.1:3030   # must be TCP, not unix socket
+    service: http://127.0.0.1:8080   # must be TCP, not unix socket
 ```
 
 ### Tunnel dies, relay loses WebSocket
