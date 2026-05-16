@@ -17,13 +17,19 @@ routes = web.RouteTableDef()
 
 @routes.get("/xrpc/com.atproto.sync.getBlob")
 async def sync_get_blob(request: web.Request):
+	did = request.query.get("did")
+	cid_str = request.query.get("cid") or request.query.get("blob")
+	if not did or not cid_str:
+		raise web.HTTPBadRequest(text="did and cid (or blob) parameters are required")
+	try:
+		cid_bytes = bytes(cbrrr.CID.decode(cid_str))
+	except Exception:
+		raise web.HTTPBadRequest(text="invalid cid format")
+
 	with get_db(request).new_con(readonly=True) as con:
 		blob_id = con.execute(
 			"SELECT blob.id FROM blob INNER JOIN user ON blob.repo=user.id WHERE did=? AND cid=? AND refcount>0",
-			(
-				request.query["did"],
-				bytes(cbrrr.CID.decode(request.query["cid"])),
-			),  # TODO: check params exist first, give nicer error
+			(did, cid_bytes),
 		).get
 		if blob_id is None:
 			raise web.HTTPNotFound(text="blob not found")
@@ -46,7 +52,7 @@ async def sync_get_blob(request: web.Request):
 
 		# Prepare response headers
 		headers = {
-			"Content-Disposition": f'attachment; filename="{request.query["cid"]}.bin"',
+			"Content-Disposition": f'attachment; filename="{cid_str}.bin"',
 			"Accept-Ranges": "bytes",
 		}
 
