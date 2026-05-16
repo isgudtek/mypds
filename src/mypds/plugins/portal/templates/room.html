@@ -3,7 +3,7 @@
 
 {% block head %}
 <style>
-.portal-room { max-width:660px; margin:0 auto; padding:28px 16px 110px; }
+.portal-room { max-width:660px; margin:0 auto; padding:28px 16px 80px; }
 
 .portal-identities {
   display:grid; grid-template-columns:1fr 32px 1fr;
@@ -43,6 +43,14 @@
   border-bottom:1px solid var(--border); padding-bottom:10px; margin-bottom:16px;
   display:flex; align-items:center; gap:8px;
 }
+.hdr-btn {
+  font-size:.6rem; font-family:var(--mono); color:var(--dim);
+  background:none; border:1px solid var(--border); border-radius:4px;
+  padding:3px 8px; cursor:pointer; text-decoration:none;
+  display:inline-flex; align-items:center; gap:4px; transition:color .15s,border-color .15s;
+}
+.hdr-btn:hover { color:var(--cyan); border-color:var(--cyan); }
+.hdr-btn--danger:hover { color:#f87171; border-color:#f87171; }
 .live-dot {
   width:6px; height:6px; border-radius:50%; background:var(--cyan);
   animation:pulse 2s ease-in-out infinite;
@@ -216,6 +224,21 @@
   <div class="drops-header">
     <div class="live-dot" id="live-dot" title="live"></div>
     <span id="drops-label">shared space · {{ drops|length }} drop{% if drops|length != 1 %}s{% endif %}</span>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+      <a class="hdr-btn" href="/portal/room/{{ visitor[0] }}/download" download>
+        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        export
+      </a>
+      {% if is_owner %}
+      <form method="post" action="/portal/room/{{ visitor[0] }}/purge" style="margin:0;"
+            onsubmit="return confirm('Delete all messages in this room? This cannot be undone.')">
+        <button type="submit" class="hdr-btn hdr-btn--danger">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          purge
+        </button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 
   {% if not drops %}
@@ -280,7 +303,7 @@
         </svg>
         file
       </label>
-      <input type="file" id="img-input" name="image">
+      <input type="file" id="img-input" name="image" multiple>
       <button type="submit">drop</button>
     </div>
     <div class="img-preview-wrap" id="img-preview-wrap">
@@ -293,16 +316,21 @@
 
 <script>
 (function() {
-  const roomDid   = {{ visitor[0] | tojson }};
-  const viewerDid = {{ viewer_did | tojson }};
-  const ownerDid  = {{ owner_did | tojson }};
-  const visitorAvatar = {{ (visitor[3] or '') | tojson }};
+  const roomDid   = {{ visitor[0] | tojson | safe }};
+  const viewerDid = {{ viewer_did | tojson | safe }};
+  const ownerDid  = {{ owner_did | tojson | safe }};
+  const visitorAvatar = {{ (visitor[3] or '') | tojson | safe }};
   const isOwner   = {{ 'true' if is_owner else 'false' }};
   let dropCount   = {{ drops|length }};
 
   // ── scroll to bottom ──────────────────────────────────────────────────────
   const dropsEl = document.getElementById('drops');
-  dropsEl.scrollIntoView({block: 'end'});
+  function scrollToBottom(smooth) {
+    requestAnimationFrame(() => {
+      window.scrollTo({top: document.body.scrollHeight, behavior: smooth ? 'smooth' : 'instant'});
+    });
+  }
+  scrollToBottom(false);
 
   // ── image attach preview ──────────────────────────────────────────────────
   const imgInput     = document.getElementById('img-input');
@@ -313,8 +341,10 @@
   const fileNameLabel= document.getElementById('file-name-label');
 
   imgInput.addEventListener('change', function() {
-    if (this.files[0]) {
-      const file = this.files[0];
+    const files = this.files;
+    if (!files.length) return;
+    if (files.length === 1) {
+      const file = files[0];
       if (file.type.startsWith('image/')) {
         imgPreview.src = URL.createObjectURL(file);
         imgPreview.style.display = '';
@@ -325,9 +355,14 @@
         fileNameLabel.textContent = file.name;
         fileNameLabel.style.display = 'inline';
       }
-      previewWrap.classList.add('visible');
-      attachLabel.classList.add('has-file');
+    } else {
+      imgPreview.src = '';
+      imgPreview.style.display = 'none';
+      fileNameLabel.textContent = `${files.length} files`;
+      fileNameLabel.style.display = 'inline';
     }
+    previewWrap.classList.add('visible');
+    attachLabel.classList.add('has-file');
   });
 
   imgClear.addEventListener('click', function() {
@@ -429,7 +464,7 @@
   }
 
   function connect() {
-    const es = new EventSource(`/portal/room/${encodeURIComponent(roomDid)}/stream`);
+    const es = new EventSource(`/portal/room/${roomDid}/stream`);
 
     es.onopen = function() {
       liveDot.style.background = 'var(--cyan)';
@@ -444,13 +479,22 @@
         if (emptyMsg) emptyMsg.remove();
         const el = makeDropEl(data);
         dropsEl.appendChild(el);
-        el.scrollIntoView({behavior: 'smooth', block: 'end'});
+        scrollToBottom(true);
         dropCount++;
         updateLabel();
       } else if (data.type === 'kicked' && !isOwner) {
         es.close();
         document.getElementById('kicked-overlay').classList.add('show');
         document.getElementById('portal-input-bar').style.display = 'none';
+      } else if (data.type === 'purge') {
+        dropsEl.innerHTML = '';
+        dropCount = 0;
+        updateLabel();
+        const em = document.getElementById('empty-msg') || document.createElement('div');
+        em.id = 'empty-msg';
+        em.style = 'text-align:center;padding:40px 0;color:var(--dim);font-size:.8rem;line-height:1.6;';
+        em.innerHTML = 'nothing here yet<br><span style="font-size:.7rem;">leave the first drop ↓</span>';
+        dropsEl.parentNode.insertBefore(em, dropsEl);
       }
     };
 

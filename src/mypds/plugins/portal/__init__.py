@@ -46,7 +46,7 @@ SETTINGS = [
         "type": "select",
         "label": "Access mode",
         "description": "Who can enter the portal. Whitelist: only listed handles. Blacklist: everyone except listed handles.",
-        "default": "open",
+        "default": "blacklist",
         "options": [("open", "Open (anyone with a Bluesky account)"), ("whitelist", "Whitelist only"), ("blacklist", "Block listed handles")],
         "group": "access",
     },
@@ -93,13 +93,16 @@ def _ensure_tables():
         created_at TEXT DEFAULT(datetime('now'))
     )""")
     con.execute("""CREATE TABLE IF NOT EXISTS portal_kicked (
-        did TEXT PRIMARY KEY, kicked_at TEXT DEFAULT(datetime('now'))
+        did TEXT PRIMARY KEY, handle TEXT, kicked_at TEXT DEFAULT(datetime('now'))
     )""")
     cols = {r[1] for r in con.execute("PRAGMA table_info(portal_drop)").fetchall()}
     if "image_path" not in cols:
         con.execute("ALTER TABLE portal_drop ADD COLUMN image_path TEXT")
     if "file_name" not in cols:
         con.execute("ALTER TABLE portal_drop ADD COLUMN file_name TEXT")
+    kicked_cols = {r[1] for r in con.execute("PRAGMA table_info(portal_kicked)").fetchall()}
+    if "handle" not in kicked_cols:
+        con.execute("ALTER TABLE portal_kicked ADD COLUMN handle TEXT")
     con.commit()
 
 
@@ -343,6 +346,111 @@ async def portal_verify_post(request: web.Request):
     return resp
 
 
+# Download conversation — must be before generic GET /portal/room/{did:.*}
+@routes.get("/portal/room/{did:.*}/download")
+async def portal_download(request: web.Request):
+    _ensure_tables()
+    room_did = request.match_info["did"]
+    session = get_session(request)
+    visitor_did = _get_visitor_did(request)
+
+    if not session and visitor_did != room_did:
+        raise web.HTTPFound("/portal/enter")
+
+    visitor = _get_con().execute(
+        "SELECT did, handle, display_name, avatar FROM portal_visitor WHERE did=?", (room_did,)
+    ).fetchone()
+    if not visitor:
+        raise web.HTTPNotFound()
+
+    db = get_db(request)
+    owner_row = db.con.execute("SELECT did, handle FROM user LIMIT 1").fetchone()
+    owner_did, owner_handle = (owner_row[0], owner_row[1]) if owner_row else ("", "")
+
+    _IMG_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    raw = _get_con().execute(
+        "SELECT id, author, content, created_at, image_path, file_name FROM portal_drop WHERE room_did=? ORDER BY created_at ASC",
+        (room_did,),
+    ).fetchall()
+
+    import base64 as _b64
+    import html as _html
+
+    drops_html = []
+    for row in raw:
+        _, author, content, created_at, image_path, file_name = row
+        is_owner_drop = (author == owner_did)
+        is_mine = is_owner_drop if session else (author == visitor_did)
+
+        parts = []
+        if content:
+            parts.append(f'<div class="text">{_html.escape(content)}</div>')
+        if image_path:
+            fpath = os.path.join(MEDIA_DIR, "portal", image_path)
+            ext = os.path.splitext(image_path)[1].lower()
+            is_img = ext in _IMG_EXTS
+            if os.path.exists(fpath) and os.path.getsize(fpath) <= 8 * 1024 * 1024:
+                with open(fpath, "rb") as fh:
+                    enc = _b64.b64encode(fh.read()).decode()
+                mime, _ = mimetypes.guess_type(image_path)
+                mime = mime or "application/octet-stream"
+                if is_img:
+                    parts.append(f'<img src="data:{mime};base64,{enc}" style="max-width:100%;max-height:320px;border-radius:6px;margin-top:6px;display:block;">')
+                else:
+                    fn = _html.escape(file_name or image_path)
+                    parts.append(f'<a href="data:{mime};base64,{enc}" download="{fn}" style="display:inline-block;margin-top:6px;padding:5px 10px;background:#1a2a3a;border-radius:6px;color:#67e8f9;text-decoration:none;font-size:.8rem;">&#8964; {fn}</a>')
+        parts.append(f'<div class="time">{_html.escape(created_at[:16])}</div>')
+        who = f"@{owner_handle}" if is_owner_drop else f"@{visitor[1]}"
+        radius = "4px 12px 12px 12px" if not is_mine else "12px 4px 12px 12px"
+        bg = "#1a2a2a" if is_owner_drop else "#1a1a2a"
+        direction = "row-reverse" if is_mine else "row"
+        drops_html.append(
+            f'<div style="display:flex;flex-direction:{direction};margin-bottom:12px;">'
+            f'<div style="max-width:72%;background:{bg};border-radius:{radius};padding:8px 12px;">'
+            f'<div style="font-size:.65rem;color:#6b7280;margin-bottom:4px;">{_html.escape(who)}</div>'
+            + "".join(parts) +
+            f'</div></div>'
+        )
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    count = len(raw)
+    html_out = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portal · @{_html.escape(visitor[1])}</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#0a0a0a;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;padding:24px 16px 48px}}
+.header{{max-width:660px;margin:0 auto 28px;border-bottom:1px solid #222;padding-bottom:16px}}
+.header h1{{font-size:1rem;font-weight:700;color:#67e8f9;margin-bottom:6px}}
+.header p{{font-size:.75rem;color:#6b7280;margin-top:4px}}
+.drops{{max-width:660px;margin:0 auto}}
+.time{{font-size:.6rem;color:#6b7280;margin-top:4px}}
+.text{{font-size:.82rem;line-height:1.5;word-break:break-word}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Portal conversation</h1>
+  <p>@{_html.escape(owner_handle)} &#x21c4; @{_html.escape(visitor[1])}</p>
+  <p>{count} message{"s" if count != 1 else ""} &middot; downloaded {now}</p>
+</div>
+<div class="drops">
+{"".join(drops_html) if drops_html else '<p style="text-align:center;color:#6b7280;padding:40px 0;">no messages</p>'}
+</div>
+</body>
+</html>"""
+
+    fname = f"portal-{visitor[1].replace('.', '-')}-{datetime.now(timezone.utc).strftime('%Y%m%d')}.html"
+    return web.Response(
+        body=html_out.encode(),
+        content_type="text/html",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # SSE stream — must be registered before the generic GET /portal/room/{did:.*}
 @routes.get("/portal/room/{did:.*}/stream")
 async def portal_room_stream(request: web.Request):
@@ -440,15 +548,48 @@ async def portal_kick(request: web.Request):
         raise web.HTTPUnauthorized()
 
     room_did = request.match_info["did"]
+    visitor_row = _get_con().execute("SELECT handle FROM portal_visitor WHERE did=?", (room_did,)).fetchone()
+    handle = visitor_row[0] if visitor_row else room_did
     _get_con().execute(
-        "INSERT OR REPLACE INTO portal_kicked (did, kicked_at) VALUES (?, datetime('now'))",
-        (room_did,),
+        "INSERT OR REPLACE INTO portal_kicked (did, handle, kicked_at) VALUES (?, ?, datetime('now'))",
+        (room_did, handle),
     )
     _get_con().execute("DELETE FROM portal_visitor WHERE did=?", (room_did,))
     _get_con().commit()
 
+    # Persist kick to block_list setting using handle (readable) not DID
+    ws = get_web_store(request)
+    block_raw = ws.get_plugin_setting("portal", "block_list") or ""
+    blocked = {line.strip() for line in block_raw.splitlines() if line.strip()}
+    blocked.add(handle)
+    ws.set_plugin_setting("portal", "block_list", "\n".join(sorted(blocked)))
+
     await _broadcast(room_did, {"type": "kicked"})
     raise web.HTTPFound("/portal")
+
+
+@routes.post("/portal/room/{did:.*}/purge")
+async def portal_purge(request: web.Request):
+    _ensure_tables()
+    session = get_session(request)
+    if not session:
+        raise web.HTTPUnauthorized()
+
+    room_did = request.match_info["did"]
+    file_rows = _get_con().execute(
+        "SELECT image_path FROM portal_drop WHERE room_did=? AND image_path IS NOT NULL", (room_did,)
+    ).fetchall()
+    for (fp,) in file_rows:
+        try:
+            os.unlink(os.path.join(MEDIA_DIR, "portal", fp))
+        except OSError:
+            pass
+
+    _get_con().execute("DELETE FROM portal_drop WHERE room_did=?", (room_did,))
+    _get_con().commit()
+
+    await _broadcast(room_did, {"type": "purge"})
+    raise web.HTTPFound(f"/portal/room/{room_did}")
 
 
 @routes.post("/portal/room/{did:.*}/drop")
@@ -464,29 +605,9 @@ async def portal_drop(request: web.Request):
     data = await request.post()
     content = data.get("content", "").strip()[:500]
 
-    image_path = None
-    is_image = False
-    orig_name = None
-    img_field = data.get("image")
-    if img_field and hasattr(img_field, "filename") and img_field.filename:
-        ct = (img_field.content_type or "").split(";")[0].strip()
-        orig_name = img_field.filename
-        orig_ext = os.path.splitext(orig_name)[1].lower()
-        if orig_ext and 1 < len(orig_ext) <= 10 and orig_ext[1:].isalnum():
-            ext = orig_ext
-        else:
-            ext = mimetypes.guess_extension(ct) or ".bin"
-        fname = secrets.token_hex(10) + ext
-        portal_dir = os.path.join(MEDIA_DIR, "portal")
-        os.makedirs(portal_dir, exist_ok=True)
-        img_bytes = img_field.file.read()
-        if 0 < len(img_bytes) <= 10 * 1024 * 1024:
-            with open(os.path.join(portal_dir, fname), "wb") as f:
-                f.write(img_bytes)
-            image_path = fname
-            is_image = ct in _IMAGE_TYPES
+    imgs = [f for f in data.getall("image") if f and hasattr(f, "filename") and (f.filename or "").strip()]
 
-    if not content and not image_path:
+    if not content and not imgs:
         raise web.HTTPFound(f"/portal/room/{room_did}")
 
     if session:
@@ -495,22 +616,49 @@ async def portal_drop(request: web.Request):
         author = visitor_did
 
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    cur = _get_con().execute(
-        "INSERT INTO portal_drop (room_did, author, content, image_path, file_name) VALUES (?,?,?,?,?)",
-        (room_did, author, content, image_path, orig_name if image_path else None),
-    )
-    _get_con().commit()
+    portal_dir = os.path.join(MEDIA_DIR, "portal")
+    os.makedirs(portal_dir, exist_ok=True)
 
-    await _broadcast(room_did, {
-        "type": "drop",
-        "id": cur.lastrowid,
-        "author": author,
-        "content": content,
-        "image": f"/portal/img/{image_path}" if image_path else None,
-        "is_image": is_image,
-        "file_name": orig_name if image_path else None,
-        "created_at": now_str,
-    })
+    if not imgs:
+        cur = _get_con().execute(
+            "INSERT INTO portal_drop (room_did, author, content, image_path, file_name) VALUES (?,?,?,?,?)",
+            (room_did, author, content, None, None),
+        )
+        _get_con().commit()
+        await _broadcast(room_did, {
+            "type": "drop", "id": cur.lastrowid, "author": author,
+            "content": content, "image": None, "is_image": False,
+            "file_name": None, "created_at": now_str,
+        })
+    else:
+        for i, img_field in enumerate(imgs):
+            row_content = content if i == 0 else ""
+            ct = (img_field.content_type or "").split(";")[0].strip()
+            orig_name = img_field.filename
+            orig_ext = os.path.splitext(orig_name)[1].lower()
+            ext = orig_ext if (orig_ext and 1 < len(orig_ext) <= 10 and orig_ext[1:].isalnum()) else (mimetypes.guess_extension(ct) or ".bin")
+            fname = secrets.token_hex(10) + ext
+            img_bytes = img_field.file.read()
+            image_path = None
+            is_image = False
+            if 0 < len(img_bytes) <= 10 * 1024 * 1024:
+                with open(os.path.join(portal_dir, fname), "wb") as fh:
+                    fh.write(img_bytes)
+                image_path = fname
+                is_image = ct in _IMAGE_TYPES
+            cur = _get_con().execute(
+                "INSERT INTO portal_drop (room_did, author, content, image_path, file_name) VALUES (?,?,?,?,?)",
+                (room_did, author, row_content, image_path, orig_name if image_path else None),
+            )
+            _get_con().commit()
+            await _broadcast(room_did, {
+                "type": "drop", "id": cur.lastrowid, "author": author,
+                "content": row_content,
+                "image": f"/portal/img/{image_path}" if image_path else None,
+                "is_image": is_image,
+                "file_name": orig_name if image_path else None,
+                "created_at": now_str,
+            })
 
     raise web.HTTPFound(f"/portal/room/{room_did}")
 
@@ -527,6 +675,27 @@ async def portal_img(request: web.Request):
         raise web.HTTPNotFound()
     mime, _ = mimetypes.guess_type(filename)
     return web.FileResponse(path, headers={"Content-Type": mime or "application/octet-stream"})
+
+
+def on_settings_save(plugin_name: str, post_data: dict) -> None:
+    """Called by web.py after saving plugin settings. Syncs portal_kicked with block_list."""
+    if plugin_name != APP_NAME:
+        return
+    block_raw = post_data.get("block_list", "")
+    new_blocked = _parse_list(block_raw)
+    con = _get_con()
+    kicked_rows = con.execute("SELECT did, handle FROM portal_kicked").fetchall()
+    to_unkick = []
+    for did, handle in kicked_rows:
+        did_norm = (did or "").lower()
+        handle_norm = (handle or "").lstrip("@").lower()
+        if did_norm not in new_blocked and handle_norm not in new_blocked:
+            to_unkick.append(did)
+    for did in to_unkick:
+        con.execute("DELETE FROM portal_kicked WHERE did=?", (did,))
+    if to_unkick:
+        con.commit()
+        logger.info(f"portal: unkicked {len(to_unkick)} account(s) removed from block_list")
 
 
 if __name__ == "__main__":

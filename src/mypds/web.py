@@ -524,6 +524,11 @@ async def plugin_settings_post(request: web.Request):
 		else:
 			ws.set_plugin_setting(name, key, data.get(key, s.get("default", "")))
 	values = {s["key"]: ws.get_plugin_setting(name, s["key"], s.get("default", "")) for s in schema}
+	if hasattr(mod, "on_settings_save"):
+		try:
+			mod.on_settings_save(name, dict(data))
+		except Exception:
+			pass
 	return render(request, "node_plugin_settings.html", {
 		"plugin_name": name,
 		"schema": schema,
