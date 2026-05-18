@@ -229,16 +229,20 @@ def get_recent_posts(db, did: str, limit: int = 20, cursor: str = "") -> tuple[l
 	if user_id is None:
 		return [], ""
 	uid = user_id[0]
+	# Exclude skipped NSIDs at DB level so limit applies to displayable records only
+	skip_conditions = " AND ".join(f"nsid NOT LIKE '{p}%'" for p in _SKIP_PREFIXES)
 	if cursor:
 		rows = db.con.execute(
-			"SELECT nsid, rkey, value FROM record WHERE repo=? AND rkey < ? AND rkey != 'self'"
-			" ORDER BY rkey DESC LIMIT ?",
+			f"SELECT nsid, rkey, value FROM record WHERE repo=? AND rkey < ? AND rkey != 'self'"
+			f" AND {skip_conditions}"
+			f" ORDER BY rkey DESC LIMIT ?",
 			(uid, cursor, limit),
 		).fetchall()
 	else:
 		rows = db.con.execute(
-			"SELECT nsid, rkey, value FROM record WHERE repo=? AND rkey != 'self'"
-			" ORDER BY rkey DESC LIMIT ?",
+			f"SELECT nsid, rkey, value FROM record WHERE repo=? AND rkey != 'self'"
+			f" AND {skip_conditions}"
+			f" ORDER BY rkey DESC LIMIT ?",
 			(uid, limit),
 		).fetchall()
 	posts = []
