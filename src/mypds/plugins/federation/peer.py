@@ -207,13 +207,13 @@ class FederationPeer:
             # Register own pubkey
             self._upsert_member(self.own_did, self.own_pubkey, self.own_pds_url)
 
-            # Bootstrap from seed
-            await self._handshake(session, self.seed_url)
-
             # Subscribe to all known peers' firehoses + backfill existing records
             peer_tasks = {}
             backfilled = set()
             while self._running:
+                # Re-handshake with seed first to get latest member list
+                await self._handshake(session, self.seed_url)
+
                 current_peers = {
                     r[0]: r[2] for r in self.db.execute(
                         "SELECT did, pubkey, pds_url FROM federation_member WHERE club_id=? AND did!=?",
@@ -230,8 +230,6 @@ class FederationPeer:
                         backfilled.add(peer_did)
                         asyncio.create_task(self._backfill(session, pds_url, peer_did))
 
-                # Re-handshake with seed periodically to get new members
-                await self._handshake(session, self.seed_url)
                 # Wait up to 5 min, but wake immediately if a new member joins
                 try:
                     await asyncio.wait_for(self._new_member_event.wait(), timeout=300)
