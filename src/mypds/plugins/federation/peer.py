@@ -39,6 +39,7 @@ class FederationPeer:
         self._tasks: list[asyncio.Task] = []
         self._known_peers: dict[str, dict] = {}  # did -> {pubkey, pds_url}
         self._running = False
+        self._new_member_event: asyncio.Event | None = None
 
     def _is_allowed(self, did: str, handle: str = "") -> bool:
         if self.membership == "open":
@@ -201,6 +202,7 @@ class FederationPeer:
 
     async def run(self):
         self._running = True
+        self._new_member_event = asyncio.Event()
         async with aiohttp.ClientSession() as session:
             # Register own pubkey
             self._upsert_member(self.own_did, self.own_pubkey, self.own_pds_url)
@@ -230,7 +232,17 @@ class FederationPeer:
 
                 # Re-handshake with seed periodically to get new members
                 await self._handshake(session, self.seed_url)
-                await asyncio.sleep(300)  # sync every 5 min
+                # Wait up to 5 min, but wake immediately if a new member joins
+                try:
+                    await asyncio.wait_for(self._new_member_event.wait(), timeout=300)
+                    self._new_member_event.clear()
+                except asyncio.TimeoutError:
+                    pass
+
+    def notify_new_member(self):
+        """Call from the join endpoint to wake the peer loop immediately."""
+        if self._new_member_event:
+            self._new_member_event.set()
 
     def stop(self):
         self._running = False

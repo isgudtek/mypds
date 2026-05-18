@@ -342,6 +342,10 @@ async def federation_join(request: web.Request):
             )
 
 
+    # Wake peer runner immediately so it subscribes to the new node
+    if _peer_runner:
+        _peer_runner.notify_new_member()
+
     # Return full member list
     members = db.con.execute(
         "SELECT did, pubkey, pds_url FROM federation_member WHERE club_id=?", (club_id,)
