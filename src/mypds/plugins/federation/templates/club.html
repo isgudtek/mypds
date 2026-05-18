@@ -1,0 +1,84 @@
+{% extends "node_base.html" %}
+{% block title %}club · {{ club_id }}{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <div class="panel__title" style="font-size:1.1rem; margin-bottom:16px;">
+    &#x1F512; {{ club_id }} club
+    <span style="font-size:.72rem; color:var(--muted); font-family:var(--mono); margin-left:8px;">
+      {{ member_count }} member{{ 's' if member_count != 1 else '' }} ·
+      {% if running %}<span style="color:var(--green);">connected</span>{% else %}<span style="color:var(--red);">offline</span>{% endif %}
+    </span>
+  </div>
+
+  <div class="home-layout">
+    <div class="home-main">
+
+      <!-- Post form -->
+      <form method="post" action="/club/post" style="margin-bottom:16px;">
+        <div style="display:flex; gap:8px; align-items:flex-end;">
+          <textarea name="text" rows="2" placeholder="Write something to the club..." required
+            style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px;
+                   background:var(--surface); color:var(--text); font-size:.88rem; resize:vertical;
+                   font-family:inherit;"></textarea>
+          <button type="submit"
+            style="padding:8px 16px; background:var(--accent); color:#fff; border:none;
+                   border-radius:6px; cursor:pointer; font-size:.85rem; white-space:nowrap;">
+            Publish encrypted
+          </button>
+        </div>
+        <div style="font-size:.68rem; color:var(--muted); margin-top:4px;">
+          Encrypted for {{ member_count }} club member{{ 's' if member_count != 1 else '' }} only.
+          Public firehose sees ciphertext.
+        </div>
+      </form>
+
+      <!-- Feed -->
+      {% if posts %}
+        <div class="feed">
+          {% for post in posts %}
+          <div class="post">
+            <div class="post__meta">
+              <span class="mono" style="font-size:.72rem; color:var(--accent);">{{ post.handle }}</span>
+              <span>{{ post.ts_human }}</span>
+              <span class="mono" style="font-size:.65rem; color:var(--muted);">{{ club_id }}</span>
+            </div>
+            <div class="post__text">{{ post.text }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty">
+          <div class="empty__icon">&#x1F510;</div>
+          No club posts yet. Be the first.
+        </div>
+      {% endif %}
+
+    </div>
+
+    <div class="home-sidebar">
+      <div class="panel">
+        <div class="panel__title">about this club</div>
+        <div style="font-size:.75rem; font-family:var(--mono); color:var(--muted); line-height:2;">
+          <div>id: <span style="color:var(--text)">{{ club_id }}</span></div>
+          <div>members: <span style="color:var(--text)">{{ member_count }}</span></div>
+          <div>encryption: <span style="color:var(--text)">NaCl hybrid</span></div>
+          <div>status: <span style="color:{% if running %}var(--green){% else %}var(--red){% endif %}">
+            {% if running %}connected{% else %}offline{% endif %}
+          </span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel__title">how it works</div>
+        <div style="font-size:.75rem; color:var(--muted); line-height:1.6;">
+          Posts are encrypted before reaching the public firehose.
+          Only nodes with a valid club keypair can decrypt. Membership
+          is controlled by the seed server's whitelist.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

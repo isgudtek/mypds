@@ -20,7 +20,7 @@ from aiohttp import web
 from . import repo_ops
 from . import atproto_repo
 from . import util
-from .app_util import get_db, get_jinja_env, get_firehose_queues, get_firehose_queues_lock
+from .app_util import get_db, get_client, get_jinja_env, get_firehose_queues, get_firehose_queues_lock
 from .web_store import WebStore, MEDIA_DIR
 from .totp_util import make_preauth
 
@@ -159,28 +159,113 @@ def redirect(location: str) -> web.Response:
 	return resp
 
 
-def get_recent_posts(db, did: str, limit: int = 20) -> list:
-	"""Fetch recent app.bsky.feed.post records for a DID, decoded from CBOR."""
-	user_id = db.con.execute("SELECT id FROM user WHERE did=?", (did,)).get
-	if user_id is None:
-		return []
-	rows = db.con.execute(
-		"SELECT rkey, value FROM record WHERE repo=? AND nsid='app.bsky.feed.post' ORDER BY rkey DESC LIMIT ?",
-		(user_id, limit),
-	).fetchall()
-	posts = []
-	for rkey, value in rows:
-		try:
-			rec = cbrrr.decode_dag_cbor(value)
-			posts.append({
-				"rkey": rkey,
-				"text": rec.get("text", ""),
-				"created_at": rec.get("createdAt", ""),
-				"embed": rec.get("embed"),
+_SKIP_PREFIXES = (
+	"app.bsky.actor.", "app.bsky.graph.", "app.bsky.feed.like",
+	"app.bsky.feed.repost", "chat.bsky.", "net.anisota.", "wiki.",
+	"sh.tangled.", "fm.plyr.", "fyi.atstore.", "dev.npmx.", "pub.social.",
+)
+
+_TID_CHARS = frozenset("234567abcdefghijklmnopqrstuvwxyz")
+
+
+def _is_tid(rkey: str) -> bool:
+	return len(rkey) == 13 and all(c in _TID_CHARS for c in rkey)
+
+
+def _record_text(rec: dict) -> str:
+	for key in ("text", "title", "name", "description", "body", "content"):
+		val = rec.get(key)
+		if isinstance(val, str) and val.strip():
+			return val[:300]
+	return ""
+
+
+def _collection_label(nsid: str) -> str:
+	parts = nsid.split(".")
+	return parts[-1] if parts else nsid
+
+
+_NSID_APP_OVERRIDES = {
+	"im.flushing": "flushes.app",
+	"net.anisota": "cocoon.anisota.net",
+	"sh.tangled":  "tangled.org",
+}
+
+
+def _nsid_domain(nsid: str) -> str:
+	parts = nsid.split(".")
+	if len(parts) >= 2:
+		authority = f"{parts[0]}.{parts[1]}"
+		return _NSID_APP_OVERRIDES.get(authority, f"{parts[1]}.{parts[0]}")
+	return ""
+
+
+def _extract_images(embed: dict, did: str) -> list:
+	images = []
+	t = embed.get("$type", "")
+	if t == "app.bsky.embed.images":
+		for img in embed.get("images", []):
+			cid = img.get("image", {}).get("ref", {}).get("$link", "")
+			if cid:
+				images.append({
+					"url": f"/xrpc/com.atproto.sync.getBlob?did={did}&cid={cid}",
+					"alt": img.get("alt", ""),
+				})
+	elif t == "app.bsky.embed.external":
+		ext = embed.get("external", {})
+		cid = ext.get("thumb", {}).get("ref", {}).get("$link", "")
+		if cid:
+			images.append({
+				"url": f"/xrpc/com.atproto.sync.getBlob?did={did}&cid={cid}",
+				"alt": ext.get("title", ""),
 			})
+	elif t == "app.bsky.embed.recordWithMedia":
+		images += _extract_images(embed.get("media", {}), did)
+	return images
+
+
+def get_recent_posts(db, did: str, limit: int = 20, cursor: str = "") -> tuple[list, str]:
+	user_id = db.con.execute("SELECT id FROM user WHERE did=?", (did,)).fetchone()
+	if user_id is None:
+		return [], ""
+	uid = user_id[0]
+	if cursor:
+		rows = db.con.execute(
+			"SELECT nsid, rkey, value FROM record WHERE repo=? AND rkey < ? AND rkey != 'self'"
+			" ORDER BY rkey DESC LIMIT ?",
+			(uid, cursor, limit),
+		).fetchall()
+	else:
+		rows = db.con.execute(
+			"SELECT nsid, rkey, value FROM record WHERE repo=? AND rkey != 'self'"
+			" ORDER BY rkey DESC LIMIT ?",
+			(uid, limit),
+		).fetchall()
+	posts = []
+	for nsid, rkey, value in rows:
+		if not _is_tid(rkey):
+			continue
+		if any(nsid.startswith(p) for p in _SKIP_PREFIXES):
+			continue
+		try:
+			rec = cbrrr.decode_dag_cbor(value, atjson_mode=True)
 		except Exception:
-			pass
-	return posts
+			continue
+		text = _record_text(rec)
+		domain = _nsid_domain(nsid)
+		images = _extract_images(rec.get("embed") or {}, did)
+		posts.append({
+			"rkey": rkey,
+			"nsid": nsid,
+			"label": _collection_label(nsid),
+			"text": text,
+			"created_at": rec.get("createdAt", ""),
+			"images": images,
+			"platform_domain": domain,
+			"platform_post_url": f"https://{domain}/profile/{did}/post/{rkey}" if domain else "",
+		})
+	next_cursor = posts[-1]["rkey"] if posts else ""
+	return posts, next_cursor
 
 
 def get_node_profile(db) -> dict:
@@ -236,8 +321,9 @@ async def homepage(request: web.Request):
 	db = get_db(request)
 	profile = get_node_profile(db)
 	posts = []
+	feed_cursor = ""
 	if profile["did"]:
-		posts = get_recent_posts(db, profile["did"])
+		posts, feed_cursor = get_recent_posts(db, profile["did"])
 		for p in posts:
 			p["ts_human"] = format_ts(p["created_at"])
 
@@ -257,9 +343,25 @@ async def homepage(request: web.Request):
 	return render(request, "node_home.html", {
 		"profile": profile,
 		"posts": posts,
+		"feed_cursor": feed_cursor,
 		"version": version,
 		"cv_widget": cv_widget,
 	})
+
+
+@web_routes.get("/feed-more")
+async def feed_more(request: web.Request) -> web.Response:
+	cursor = request.query.get("cursor", "")
+	if not cursor:
+		return web.json_response({"posts": [], "cursor": ""})
+	db = get_db(request)
+	profile = get_node_profile(db)
+	if not profile["did"]:
+		return web.json_response({"posts": [], "cursor": ""})
+	posts, next_cursor = get_recent_posts(db, profile["did"], cursor=cursor)
+	for p in posts:
+		p["ts_human"] = format_ts(p["created_at"])
+	return web.json_response({"posts": posts, "cursor": next_cursor})
 
 
 @web_routes.get("/node-info")
@@ -386,7 +488,7 @@ async def dashboard(request: web.Request):
 
 	db = get_db(request)
 	profile = get_node_profile(db)
-	posts = get_recent_posts(db, session["did"], limit=5)
+	posts, _ = get_recent_posts(db, session["did"], limit=5)
 	for p in posts:
 		p["ts_human"] = format_ts(p["created_at"])
 

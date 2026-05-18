@@ -1,0 +1,19 @@
+{% if apps.aturi %}<script>
+(function () {
+  var didEl = document.querySelector('.profile__did');
+  if (!didEl) return;
+  var did = didEl.textContent.trim();
+  if (!did) return;
+  document.querySelectorAll('.post[data-rkey]').forEach(function (post) {
+    var rkey = post.dataset.rkey;
+    if (!rkey) return;
+    var a = document.createElement('a');
+    a.href = 'https://aturi.to/profile/' + did + '/post/' + rkey;
+    a.textContent = '↗ open';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.style.cssText = 'font-size:.72rem; color:var(--muted); text-decoration:none; margin-left:auto;';
+    post.querySelector('.post__meta').appendChild(a);
+  });
+})();
+</script>{% endif %}

@@ -800,7 +800,9 @@ def construct_app(
 	# Plugin routes — proxy each enabled plugin to its subprocess
 	ws_for_startup = WebStore()
 	for app_name, plugin_mod in plugins.items():
-		prefix = getattr(plugin_mod, "URL_PREFIX", f"/{app_name}")
+		prefixes = getattr(plugin_mod, "URL_PREFIXES", None)
+		if prefixes is None:
+			prefixes = [getattr(plugin_mod, "URL_PREFIX", f"/{app_name}")]
 
 		# Capture app_name for closure
 		def make_handler(name):
@@ -809,8 +811,9 @@ def construct_app(
 			return handler
 
 		handler = make_handler(app_name)
-		app.router.add_route("*", prefix, handler)
-		app.router.add_route("*", f"{prefix}/{{rest:.*}}", handler)
+		for prefix in prefixes:
+			app.router.add_route("*", prefix, handler)
+			app.router.add_route("*", f"{prefix}/{{rest:.*}}", handler)
 
 		if ws_for_startup.get_app_enabled(app_name):
 			plugin_manager.start(app_name)

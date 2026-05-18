@@ -29,16 +29,31 @@
       <div class="panel__title">recent posts</div>
 
       {% if posts %}
-        <div class="feed">
+        <div class="feed" id="feed" data-cursor="{{ feed_cursor }}">
           {% for post in posts %}
-          <div class="post">
+          <div class="post" data-rkey="{{ post.rkey }}" style="position:relative;">
+            {% if post.platform_domain %}
+            <a href="{{ post.platform_post_url }}" target="_blank" rel="noopener" title="{{ post.platform_domain }}" style="position:absolute; top:8px; right:8px; display:flex; text-decoration:none; opacity:.8;">
+              <img src="https://www.google.com/s2/favicons?domain={{ post.platform_domain }}&sz=32" width="24" height="24" style="border-radius:4px;" onerror="this.style.display='none'">
+            </a>
+            {% endif %}
             <div class="post__meta">
               <span>{{ post.ts_human }}</span>
-              <span class="mono">{{ post.rkey }}</span>
+              <span class="mono" style="font-size:.68rem; color:var(--muted);">{{ post.label }}</span>
             </div>
-            <div class="post__text">{{ post.text }}</div>
+            {% if post.text %}<div class="post__text">{{ post.text }}</div>{% endif %}
+            {% if post.images %}
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+              {% for img in post.images %}
+              <img src="{{ img.url }}" alt="{{ img.alt }}" loading="lazy"
+                   style="max-width:100%; max-height:300px; border-radius:6px; object-fit:cover; cursor:pointer;"
+                   onclick="this.style.maxHeight=this.style.maxHeight?'':'none'">
+              {% endfor %}
+            </div>
+            {% endif %}
           </div>
           {% endfor %}
+          <div id="feed-sentinel" style="height:1px;"></div>
         </div>
       {% else %}
         <div class="empty">
@@ -46,6 +61,54 @@
           No posts yet.
         </div>
       {% endif %}
+      <script>
+      (function () {
+        var feed = document.getElementById('feed');
+        var sentinel = document.getElementById('feed-sentinel');
+        if (!feed || !sentinel) return;
+        var cursor = feed.dataset.cursor;
+        if (!cursor) return;
+        var loading = false;
+        var obs = new IntersectionObserver(function(entries) {
+          if (!entries[0].isIntersecting || loading || !cursor) return;
+          loading = true;
+          fetch('/feed-more?cursor=' + encodeURIComponent(cursor))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              cursor = data.cursor || '';
+              feed.dataset.cursor = cursor;
+              (data.posts || []).forEach(function(p) {
+                var div = document.createElement('div');
+                div.className = 'post';
+                div.dataset.rkey = p.rkey || '';
+                var favicon = p.platform_domain
+                  ? '<a href="' + (p.platform_post_url||'#') + '" target="_blank" rel="noopener" style="position:absolute;top:8px;right:8px;display:flex;text-decoration:none;opacity:.8;">'
+                    + '<img src="https://www.google.com/s2/favicons?domain=' + encodeURIComponent(p.platform_domain) + '&sz=32" width="24" height="24" style="border-radius:4px;" onerror="this.style.display=\'none\'">'
+                    + '</a>' : '';
+                div.style.position = 'relative';
+                var meta = '<div class="post__meta"><span>' + (p.ts_human || '') + '</span>'
+                  + '<span class="mono" style="font-size:.68rem;color:var(--muted);">' + (p.label || '') + '</span>'
+                  + '</div>';
+                var text = p.text ? '<div class="post__text"></div>' : '';
+                var imgs = '';
+                if (p.images && p.images.length) {
+                  imgs = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">';
+                  p.images.forEach(function(img) {
+                    imgs += '<img src="' + img.url + '" alt="" loading="lazy" style="max-width:100%;max-height:300px;border-radius:6px;object-fit:cover;cursor:pointer;" onclick="this.style.maxHeight=this.style.maxHeight?\'none\':\'300px\'">';
+                  });
+                  imgs += '</div>';
+                }
+                div.innerHTML = favicon + meta + text + imgs;
+                if (p.text) div.querySelector('.post__text').textContent = p.text;
+                feed.insertBefore(div, sentinel);
+              });
+              if (!cursor) obs.unobserve(sentinel);
+              loading = false;
+            }).catch(function() { loading = false; });
+        }, { rootMargin: '200px' });
+        obs.observe(sentinel);
+      })();
+      </script>
     </div>
 
     <!-- Sidebar -->
