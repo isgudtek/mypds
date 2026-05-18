@@ -9,10 +9,13 @@ import asyncio
 import datetime
 import json
 import logging
+import time
+import uuid
 
+import jwt as _jwt
 from aiohttp import web
 
-from mypds.app_util import MILLIPDS_DB
+from mypds.app_util import MILLIPDS_DB, MILLIPDS_AIOHTTP_CLIENT
 from mypds.web import render, get_session, get_web_store, MILLIPDS_WEB_STORE
 
 from . import crypto
@@ -111,12 +114,17 @@ def _get_or_create_keypair(db, club_id: str) -> tuple[str, str]:
     return priv, pub
 
 
+def _own_did(db) -> str:
+    row = db.con.execute("SELECT did FROM user LIMIT 1").fetchone()
+    return row[0] if row else ""
+
+
 def _start_peer(app, ws, club_id, seed_url, membership, whitelist_pattern, own_pds_url=""):
     global _peer_runner, _peer_task
     db = app[MILLIPDS_DB]
     _ensure_tables(db)
 
-    own_did = db.config.get("did", "")
+    own_did = _own_did(db)
     if not own_pds_url:
         own_pds_url = db.config.get("pds_pfx", "")
     privkey, pubkey = _get_or_create_keypair(db, club_id)
@@ -214,7 +222,7 @@ async def club_post(request: web.Request):
     if not text:
         raise web.HTTPFound("/club")
 
-    own_did = db.config.get("did", "")
+    own_did = sess["did"]
     privkey, pubkey = _get_or_create_keypair(db, club_id)
 
     members = db.con.execute(
@@ -226,6 +234,7 @@ async def club_post(request: web.Request):
 
     encrypted = crypto.encrypt(text, member_map)
     created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    rkey = created_at.replace(":", "").replace("-", "").replace("+", "")[:17]
 
     record = {
         "$type": CLUB_NSID,
@@ -235,18 +244,38 @@ async def club_post(request: web.Request):
         "createdAt": created_at,
     }
 
-    # Store locally — round-trip through decrypt to verify keys are correct
-    plaintext_check = crypto.decrypt(record, own_did, privkey)
-    if plaintext_check:
-        import hashlib
-        pseudo_cid = "local-" + hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()[:16]
-        db.con.execute(
-            "INSERT OR IGNORE INTO federation_record"
-            " (cid, author_did, rkey, club_id, plaintext, created_at, indexed_at)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (pseudo_cid, own_did, created_at.replace(":","").replace("-","")[:13],
-             club_id, text, created_at, created_at)
-        )
+    # Publish to local ATProto repo so firehose carries it to peers
+    cfg = db.config
+    access_token = _jwt.encode({
+        "scope": "com.atproto.access",
+        "aud": cfg.get("pds_did", ""),
+        "sub": own_did,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 300,
+        "jti": str(uuid.uuid4()),
+    }, cfg.get("jwt_access_secret", ""), "HS256")
+
+    pds_url = cfg.get("pds_pfx", "")
+    client = request.app[MILLIPDS_AIOHTTP_CLIENT]
+    try:
+        async with client.post(
+            f"{pds_url}/xrpc/com.atproto.repo.putRecord",
+            json={"repo": own_did, "collection": CLUB_NSID, "rkey": rkey, "record": record},
+            headers={"Authorization": f"Bearer {access_token}"},
+        ) as resp:
+            resp_data = await resp.json()
+            actual_cid = resp_data.get("cid", "")
+            if resp.status in (200, 201) and actual_cid:
+                db.con.execute(
+                    "INSERT OR IGNORE INTO federation_record"
+                    " (cid, author_did, rkey, club_id, plaintext, created_at, indexed_at)"
+                    " VALUES (?,?,?,?,?,?,?)",
+                    (actual_cid, own_did, rkey, club_id, text, created_at, created_at)
+                )
+            else:
+                logger.warning(f"putRecord {resp.status}: {resp_data}")
+    except Exception as e:
+        logger.error(f"putRecord error: {e}")
 
     raise web.HTTPFound("/club")
 
