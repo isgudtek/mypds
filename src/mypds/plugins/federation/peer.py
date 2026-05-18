@@ -119,25 +119,22 @@ class FederationPeer:
                         if msg.type != aiohttp.WSMsgType.BINARY:
                             continue
                         try:
-                            header, payload = cbrrr.decode_dag_cbor(msg.data[:msg.data.index(b'\xa0') if b'\xa0' in msg.data else 0] or msg.data[:8]), {}
-                        except Exception:
-                            pass
-                        try:
-                            # Parse CAR frames — simplified: look for club NSID in raw bytes
-                            if CLUB_NSID.encode() not in msg.data:
+                            # ATProto firehose format: header_cbor || body_cbor (two concatenated CBOR items)
+                            header_bytes = cbrrr.encode_dag_cbor(cbrrr.decode_dag_cbor(msg.data))
+                            body = cbrrr.decode_dag_cbor(msg.data[len(header_bytes):], atjson_mode=True)
+                            if not isinstance(body, dict):
                                 continue
-                            # Full decode
-                            parts = cbrrr.decode_dag_cbor(msg.data, atjson_mode=True)
-                            ops = parts.get("ops", []) if isinstance(parts, dict) else []
-                            for op in ops:
+                            repo_did = body.get("repo", peer_did)
+                            for op in body.get("ops", []):
                                 if op.get("action") != "create":
                                     continue
-                                # fetch the actual record
-                                cid = op.get("cid", {})
-                                if isinstance(cid, dict):
-                                    cid = cid.get("$link", "")
-                                rkey = op.get("path", "").split("/")[-1]
-                                await self._fetch_and_store(session, pds_url, peer_did, rkey, cid)
+                                path = op.get("path", "")
+                                if not path.startswith(CLUB_NSID + "/"):
+                                    continue
+                                rkey = path.split("/", 1)[-1]
+                                cid_val = op.get("cid", {})
+                                cid = cid_val.get("$link", "") if isinstance(cid_val, dict) else str(cid_val)
+                                await self._fetch_and_store(session, pds_url, repo_did, rkey, cid)
                         except Exception:
                             pass
             except Exception as e:
