@@ -119,9 +119,11 @@ class FederationPeer:
                         if msg.type != aiohttp.WSMsgType.BINARY:
                             continue
                         try:
-                            # ATProto firehose format: header_cbor || body_cbor (two concatenated CBOR items)
-                            header_bytes = cbrrr.encode_dag_cbor(cbrrr.decode_dag_cbor(msg.data))
-                            body = cbrrr.decode_dag_cbor(msg.data[len(header_bytes):], atjson_mode=True)
+                            # ATProto firehose: header_cbor || body_cbor
+                            # Header is always {t:"#...",op:1} — find boundary from t-value length
+                            raw = msg.data
+                            header_end = 8 + (raw[3] & 0x1f)
+                            body = cbrrr.decode_dag_cbor(raw[header_end:], atjson_mode=True)
                             if not isinstance(body, dict):
                                 continue
                             repo_did = body.get("repo", peer_did)
@@ -165,6 +167,38 @@ class FederationPeer:
         except Exception as e:
             logger.debug(f"[federation] fetch record error: {e}")
 
+    async def _backfill(self, session: aiohttp.ClientSession, pds_url: str, peer_did: str):
+        """Fetch all existing club records from a peer via listRecords."""
+        try:
+            cursor = None
+            while True:
+                params = {"repo": peer_did, "collection": CLUB_NSID, "limit": 50}
+                if cursor:
+                    params["cursor"] = cursor
+                async with session.get(
+                    f"{pds_url}/xrpc/com.atproto.repo.listRecords",
+                    params=params, timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status != 200:
+                        break
+                    data = await resp.json()
+                    records = data.get("records", [])
+                    for item in records:
+                        rec = item.get("value", {})
+                        cid = item.get("cid", "")
+                        rkey = item.get("uri", "").split("/")[-1]
+                        if rec.get("clubId") != self.club_id:
+                            continue
+                        plaintext = crypto.decrypt(rec, self.own_did, self.own_privkey)
+                        if plaintext:
+                            self._store_record(peer_did, rkey, plaintext, rec.get("createdAt", ""), cid)
+                    cursor = data.get("cursor")
+                    if not cursor or not records:
+                        break
+            logger.info(f"[federation] backfill done from {pds_url}")
+        except Exception as e:
+            logger.debug(f"[federation] backfill error {pds_url}: {e}")
+
     async def run(self):
         self._running = True
         async with aiohttp.ClientSession() as session:
@@ -174,8 +208,9 @@ class FederationPeer:
             # Bootstrap from seed
             await self._handshake(session, self.seed_url)
 
-            # Subscribe to all known peers' firehoses
+            # Subscribe to all known peers' firehoses + backfill existing records
             peer_tasks = {}
+            backfilled = set()
             while self._running:
                 current_peers = {
                     r[0]: r[2] for r in self.db.execute(
@@ -189,6 +224,9 @@ class FederationPeer:
                             self._subscribe_firehose(session, pds_url, peer_did)
                         )
                         peer_tasks[peer_did] = t
+                    if peer_did not in backfilled:
+                        backfilled.add(peer_did)
+                        asyncio.create_task(self._backfill(session, pds_url, peer_did))
 
                 # Re-handshake with seed periodically to get new members
                 await self._handshake(session, self.seed_url)
