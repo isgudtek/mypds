@@ -25,11 +25,13 @@ RECONNECT_DELAY = 30  # seconds
 
 class FederationPeer:
     def __init__(self, db_conn, own_did: str, own_privkey: str, own_pubkey: str,
-                 club_id: str, seed_url: str, membership: str, whitelist_pattern: str):
+                 club_id: str, seed_url: str, membership: str, whitelist_pattern: str,
+                 own_pds_url: str = ""):
         self.db = db_conn
         self.own_did = own_did
         self.own_privkey = own_privkey
         self.own_pubkey = own_pubkey
+        self.own_pds_url = own_pds_url.rstrip("/")
         self.club_id = club_id
         self.seed_url = seed_url.rstrip("/")
         self.membership = membership  # "open" or "whitelist"
@@ -62,7 +64,6 @@ class FederationPeer:
             " VALUES (?,?,?,?,?)",
             (did, pubkey, pds_url, self.club_id, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         )
-        self.db.commit()
 
     def _store_record(self, author_did: str, rkey: str, plaintext: str, created_at: str, cid: str):
         self.db.execute(
@@ -72,7 +73,6 @@ class FederationPeer:
             (cid, author_did, rkey, self.club_id, plaintext, created_at,
              time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         )
-        self.db.commit()
 
     async def _handshake(self, session: aiohttp.ClientSession, peer_url: str):
         """Exchange identity + peer list with a remote node."""
@@ -80,7 +80,7 @@ class FederationPeer:
             payload = {
                 "did": self.own_did,
                 "pubkey": self.own_pubkey,
-                "pds_url": "",  # filled by seed from request origin
+                "pds_url": self.own_pds_url,
                 "club_id": self.club_id,
                 "peers": [
                     {"did": d, "pubkey": p["pubkey"], "pds_url": p["pds_url"]}
@@ -172,7 +172,7 @@ class FederationPeer:
         self._running = True
         async with aiohttp.ClientSession() as session:
             # Register own pubkey
-            self._upsert_member(self.own_did, self.own_pubkey, "")
+            self._upsert_member(self.own_did, self.own_pubkey, self.own_pds_url)
 
             # Bootstrap from seed
             await self._handshake(session, self.seed_url)

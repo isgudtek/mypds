@@ -13,7 +13,7 @@ import logging
 from aiohttp import web
 
 from mypds.app_util import MILLIPDS_DB
-from mypds.web import render, get_session, get_web_store
+from mypds.web import render, get_session, get_web_store, MILLIPDS_WEB_STORE
 
 from . import crypto
 from .peer import FederationPeer, CLUB_NSID
@@ -111,12 +111,14 @@ def _get_or_create_keypair(db, club_id: str) -> tuple[str, str]:
     return priv, pub
 
 
-def _start_peer(app, ws, club_id, seed_url, membership, whitelist_pattern):
+def _start_peer(app, ws, club_id, seed_url, membership, whitelist_pattern, own_pds_url=""):
     global _peer_runner, _peer_task
     db = app[MILLIPDS_DB]
     _ensure_tables(db)
 
     own_did = db.config.get("did", "")
+    if not own_pds_url:
+        own_pds_url = db.config.get("pds_pfx", "")
     privkey, pubkey = _get_or_create_keypair(db, club_id)
 
     if _peer_task and not _peer_task.done():
@@ -127,6 +129,7 @@ def _start_peer(app, ws, club_id, seed_url, membership, whitelist_pattern):
         own_did=own_did,
         own_privkey=privkey,
         own_pubkey=pubkey,
+        own_pds_url=own_pds_url,
         club_id=club_id,
         seed_url=seed_url,
         membership=membership,
@@ -232,18 +235,10 @@ async def club_post(request: web.Request):
         "createdAt": created_at,
     }
 
-    # Publish via local PDS
-    from mypds.auth_bearer import get_service_auth
-    import aiohttp as _aiohttp
-    client = request.app.get(
-        __import__("mypds.app_util", fromlist=["MILLIPDS_AIOHTTP_CLIENT"]).MILLIPDS_AIOHTTP_CLIENT
-    )
-    service_token = get_service_auth(db, own_did) if hasattr(__import__("mypds.auth_bearer", fromlist=["get_service_auth"]), "get_service_auth") else None
-
-    # Store locally immediately (we're a member)
+    # Store locally — round-trip through decrypt to verify keys are correct
     plaintext_check = crypto.decrypt(record, own_did, privkey)
     if plaintext_check:
-        import hashlib, cbrrr as _cbrrr
+        import hashlib
         pseudo_cid = "local-" + hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()[:16]
         db.con.execute(
             "INSERT OR IGNORE INTO federation_record"
@@ -252,7 +247,6 @@ async def club_post(request: web.Request):
             (pseudo_cid, own_did, created_at.replace(":","").replace("-","")[:13],
              club_id, text, created_at, created_at)
         )
-    
 
     raise web.HTTPFound("/club")
 
@@ -328,6 +322,17 @@ async def federation_join(request: web.Request):
         "club_id": club_id,
         "members": [{"did": r[0], "pubkey": r[1], "pds_url": r[2]} for r in members]
     })
+
+
+async def _start_peer_on_startup(app):
+    ws = app[MILLIPDS_WEB_STORE]
+    db = app[MILLIPDS_DB]
+    club_id = ws.get_plugin_setting(APP_NAME, "club_id", "mycrab")
+    seed_url = ws.get_plugin_setting(APP_NAME, "seed_url", "https://mypds.mycrab.space")
+    membership = ws.get_plugin_setting(APP_NAME, "membership", "whitelist")
+    whitelist_pattern = ws.get_plugin_setting(APP_NAME, "whitelist_pattern", "*.mycrab.space")
+    own_pds_url = db.config.get("pds_pfx", "")
+    _start_peer(app, ws, club_id, seed_url, membership, whitelist_pattern, own_pds_url)
 
 
 if __name__ == "__main__":
