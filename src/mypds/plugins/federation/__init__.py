@@ -93,7 +93,7 @@ def _ensure_tables(db):
             pubkey TEXT NOT NULL
         )
     """)
-    db.con.commit()
+    db.con.execute("COMMIT")
 
 
 def _get_or_create_keypair(db, club_id: str) -> tuple[str, str]:
@@ -107,7 +107,7 @@ def _get_or_create_keypair(db, club_id: str) -> tuple[str, str]:
         "INSERT INTO federation_keypair (club_id, privkey, pubkey) VALUES (?,?,?)",
         (club_id, priv, pub)
     )
-    db.con.commit()
+    db.con.execute("COMMIT")
     return priv, pub
 
 
@@ -252,7 +252,7 @@ async def club_post(request: web.Request):
             (pseudo_cid, own_did, created_at.replace(":","").replace("-","")[:13],
              club_id, text, created_at, created_at)
         )
-        db.con.commit()
+        db.con.execute("COMMIT")
 
     raise web.HTTPFound("/club")
 
@@ -317,7 +317,7 @@ async def federation_join(request: web.Request):
                 " VALUES (?,?,?,?,?)",
                 (pdid, club_id, ppub, ppds, now)
             )
-    db.con.commit()
+    db.con.execute("COMMIT")
 
     # Return full member list
     members = db.con.execute(
