@@ -255,7 +255,8 @@ async def club_post(request: web.Request):
         "jti": str(uuid.uuid4()),
     }, cfg.get("jwt_access_secret", ""), "HS256")
 
-    pds_url = cfg.get("pds_pfx", "")
+    # Use local URL for internal calls — pds_pfx may not resolve from inside VPS
+    pds_url = ws.get_node_setting("pds_local_url") or cfg.get("pds_pfx", "")
     client = request.app[MILLIPDS_AIOHTTP_CLIENT]
     try:
         async with client.post(
