@@ -95,6 +95,7 @@ sed -i "s|localhost:[0-9]\+|localhost:$FREE_PORT|g" "$NEW_YML"
 echo "→ Starting cloudflare tunnel..."
 nohup cloudflared tunnel --protocol http2 --config "$NEW_YML" run "$NAME" \
     > /tmp/${NAME}-tunnel.log 2>&1 &
+disown $!
 sleep 3
 
 # ── 8. Start mypds ──────────────────────────────────────────────────
@@ -102,6 +103,7 @@ echo "→ Starting mypds..."
 nohup /opt/mypds/.venv/bin/mypds run \
     --listen_host=127.0.0.1 --listen_port="$FREE_PORT" \
     >> /tmp/mypds.log 2>&1 &
+disown $!
 echo "  Waiting for plugins to load (~10s)..."
 sleep 10
 
