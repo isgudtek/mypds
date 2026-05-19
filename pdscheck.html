@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pdscheck — atproto PDS diagnostic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0c0e0d;
+    --bg-2: #14171a;
+    --bg-3: #1a1e22;
+    --line: #232830;
+    --line-bright: #2f3640;
+    --ink: #d8dee4;
+    --ink-dim: #8a939c;
+    --ink-faint: #5a6068;
+    --ok: #7cc88a;
+    --ok-bg: rgba(124, 200, 138, 0.08);
+    --warn: #e6b450;
+    --warn-bg: rgba(230, 180, 80, 0.08);
+    --fail: #f07178;
+    --fail-bg: rgba(240, 113, 120, 0.08);
+    --skip: #6a7682;
+    --accent: #8cc8ff;
+    --accent-dim: #4a7a9a;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  body {
+    background:
+      radial-gradient(circle at 20% 0%, rgba(140, 200, 255, 0.04), transparent 50%),
+      radial-gradient(circle at 80% 100%, rgba(124, 200, 138, 0.03), transparent 50%),
+      var(--bg);
+    background-attachment: fixed;
+  }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  .wrap { max-width: 980px; margin: 0 auto; padding: 28px 24px 80px; }
+
+  header {
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 20px; margin-bottom: 28px;
+    display: flex; align-items: flex-end; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px;
+  }
+  .brand {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700; font-size: 22px; letter-spacing: -0.02em;
+  }
+  .brand .prompt { color: var(--ok); }
+  .brand .name { color: var(--ink); }
+  .tagline {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--ink-faint); font-size: 12px; margin-top: 4px;
+  }
+  .meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-faint); text-align: right; }
+  .meta a { color: var(--accent-dim); text-decoration: none; }
+  .meta a:hover { color: var(--accent); }
+
+  .panel { background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px; padding: 20px; }
+  .input-row { display: flex; gap: 10px; align-items: stretch; }
+  .input-shell {
+    flex: 1; display: flex; align-items: center;
+    background: var(--bg); border: 1px solid var(--line-bright); border-radius: 3px;
+    padding: 0 12px; transition: border-color 120ms;
+  }
+  .input-shell:focus-within { border-color: var(--accent-dim); }
+  .input-shell .sigil { font-family: 'JetBrains Mono', monospace; color: var(--ok); margin-right: 10px; user-select: none; }
+  input[type=text] {
+    flex: 1; border: none; outline: none; background: transparent;
+    color: var(--ink); font-family: 'JetBrains Mono', monospace;
+    font-size: 14px; padding: 12px 0; width: 100%;
+  }
+  input[type=text]::placeholder { color: var(--ink-faint); }
+  button.run {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
+    background: var(--ok); color: #0c0e0d; border: none; border-radius: 3px;
+    padding: 0 22px; cursor: pointer;
+    transition: filter 120ms, transform 80ms;
+  }
+  button.run:hover { filter: brightness(1.1); }
+  button.run:active { transform: translateY(1px); }
+  button.run:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .hint { color: var(--ink-faint); font-size: 12px; margin-top: 12px; font-family: 'JetBrains Mono', monospace; }
+  .hint .kbd {
+    display: inline-block; padding: 1px 6px; border: 1px solid var(--line-bright);
+    border-radius: 3px; color: var(--ink-dim); font-size: 11px;
+  }
+  .examples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .example-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    background: transparent; border: 1px solid var(--line-bright);
+    color: var(--ink-dim); padding: 4px 10px; border-radius: 999px;
+    cursor: pointer; transition: all 120ms;
+  }
+  .example-chip:hover { color: var(--accent); border-color: var(--accent-dim); }
+
+  .summary {
+    margin-top: 28px; display: none;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px;
+    padding: 14px 18px; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    align-items: center; gap: 22px; flex-wrap: wrap;
+  }
+  .summary.show { display: flex; }
+  .summary .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 6px; vertical-align: middle;
+  }
+  .summary .lbl { color: var(--ink-faint); }
+  .summary .val { color: var(--ink); font-weight: 700; }
+  .progress-bar { flex: 1; height: 4px; background: var(--bg-3); border-radius: 2px; overflow: hidden; min-width: 120px; }
+  .progress-bar > div { height: 100%; background: var(--accent); width: 0%; transition: width 200ms; }
+
+  .probes { margin-top: 16px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--bg-2); }
+  .probe { border-bottom: 1px solid var(--line); }
+  .probe:last-child { border-bottom: none; }
+
+  .probe-head {
+    display: grid; grid-template-columns: 36px 22px 1fr auto auto;
+    gap: 12px; align-items: center; padding: 12px 16px;
+    cursor: pointer; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    user-select: none; transition: background 120ms;
+  }
+  .probe-head:hover { background: var(--bg-3); }
+  .probe-num { color: var(--ink-faint); font-size: 11px; text-align: right; }
+  .status-glyph { text-align: center; font-weight: 700; }
+  .s-pending { color: var(--ink-faint); }
+  .s-running { color: var(--accent); }
+  .s-ok      { color: var(--ok); }
+  .s-warn    { color: var(--warn); }
+  .s-fail    { color: var(--fail); }
+  .s-skip    { color: var(--skip); }
+  .s-info    { color: var(--accent); }
+  .probe-name { color: var(--ink); font-weight: 500; }
+  .probe-name .sub { color: var(--ink-faint); font-weight: 400; margin-left: 8px; font-size: 12px; }
+  .probe-meta { color: var(--ink-faint); font-size: 11px; }
+  .chev { color: var(--ink-faint); font-size: 10px; transition: transform 160ms; }
+  .probe.open .chev { transform: rotate(90deg); }
+
+  .probe-body {
+    display: none;
+    padding: 0 16px 18px 70px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-dim);
+  }
+  .probe.open .probe-body { display: block; }
+  .probe-body .desc { color: var(--ink-dim); margin-bottom: 10px; line-height: 1.55; }
+  .probe-body .remediation {
+    background: var(--warn-bg); border-left: 2px solid var(--warn);
+    padding: 10px 12px; margin: 10px 0; color: var(--ink); line-height: 1.55;
+    border-radius: 0 3px 3px 0;
+  }
+  .probe-body .raw {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 3px;
+    padding: 10px 12px; margin-top: 10px; overflow-x: auto;
+    color: var(--ink-dim); white-space: pre-wrap; word-break: break-word;
+    max-height: 280px; overflow-y: auto;
+  }
+  .curl-block { margin-top: 10px; }
+  .curl-block .label {
+    color: var(--ink-faint); font-size: 10px; letter-spacing: 0.06em;
+    text-transform: uppercase; margin-bottom: 4px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .copy-btn {
+    background: transparent; border: 1px solid var(--line-bright);
+    color: var(--ink-dim); font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 2px 8px; border-radius: 2px; cursor: pointer;
+    text-transform: none; letter-spacing: 0;
+  }
+  .copy-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
+
+  .subtable {
+    width: 100%; border-collapse: collapse;
+    margin-top: 10px; font-size: 12px;
+  }
+  .subtable th, .subtable td {
+    padding: 8px 10px; text-align: left;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+  .subtable th {
+    color: var(--ink-faint); font-weight: 500; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .subtable td.nowrap { white-space: nowrap; }
+  .subtable .hostname { color: var(--ink-dim); }
+
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .pill.ok    { background: var(--ok-bg);    color: var(--ok); }
+  .pill.warn  { background: var(--warn-bg);  color: var(--warn); }
+  .pill.fail  { background: var(--fail-bg);  color: var(--fail); }
+  .pill.skip  { background: var(--bg-3);     color: var(--skip); }
+  .pill.info  { background: rgba(140,200,255,.08); color: var(--accent); }
+
+  .mini-btn {
+    background: transparent; border: 1px solid var(--line-bright);
+    color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    padding: 3px 10px; border-radius: 3px; cursor: pointer;
+    transition: all 120ms;
+  }
+  .mini-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
+  .mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  footer {
+    margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line);
+    color: var(--ink-faint); font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; line-height: 1.7;
+  }
+  footer a { color: var(--accent-dim); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block; width: 12px; height: 12px;
+    border: 1.5px solid var(--accent-dim); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: -2px;
+  }
+
+  @media (max-width: 600px) {
+    .input-row { flex-direction: column; }
+    button.run { padding: 12px; }
+    .probe-head { grid-template-columns: 22px 1fr auto; }
+    .probe-num, .probe-meta { display: none; }
+    .probe-body { padding-left: 16px; }
+    .subtable th:nth-child(3), .subtable td:nth-child(3) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="brand"><span class="prompt">$</span> <span class="name">pdscheck</span></div>
+      <div class="tagline">// atproto PDS diagnostic — runs in your browser, phones nothing home</div>
+    </div>
+    <div class="meta">
+      <div>v0.2 · <a href="#about">about</a> · <a href="#" id="reset-link">reset</a></div>
+      <div id="timestamp">—</div>
+    </div>
+  </header>
+
+  <div class="panel">
+    <div class="input-row">
+      <div class="input-shell">
+        <span class="sigil mono">▸</span>
+        <input id="target" type="text" autocomplete="off" spellcheck="false"
+               placeholder="handle (alice.bsky.social), DID, or PDS URL" />
+      </div>
+      <button class="run" id="run-btn">RUN CHECKS</button>
+    </div>
+    <div class="hint">
+      Press <span class="kbd">↵</span> to run. Probes hit <span style="color:var(--ink-dim)">/.well-known/*</span>,
+      <span style="color:var(--ink-dim)">com.atproto.*</span> on the PDS,
+      multiple relays, and <span style="color:var(--ink-dim)">plc.directory</span>.
+    </div>
+    <div class="examples">
+      <button class="example-chip" data-ex="bsky.app">bsky.app (handle)</button>
+      <button class="example-chip" data-ex="https://bsky.social">bsky.social (URL)</button>
+      <button class="example-chip" data-ex="did:plc:z72i7hdynmk6r22z27h6tvur">did:plc:…tvur</button>
+    </div>
+  </div>
+
+  <div class="summary mono" id="summary">
+    <span><span class="lbl">target</span> <span class="val" id="sum-target">—</span></span>
+    <span><span class="dot" style="background:var(--ok)"></span><span class="val" id="sum-ok">0</span> <span class="lbl">ok</span></span>
+    <span><span class="dot" style="background:var(--warn)"></span><span class="val" id="sum-warn">0</span> <span class="lbl">warn</span></span>
+    <span><span class="dot" style="background:var(--fail)"></span><span class="val" id="sum-fail">0</span> <span class="lbl">fail</span></span>
+    <span><span class="lbl">elapsed</span> <span class="val" id="sum-elapsed">0ms</span></span>
+    <span class="progress-bar"><div id="progress"></div></span>
+  </div>
+
+  <div class="probes" id="probes"></div>
+
+  <footer>
+    <div id="about">
+      <strong style="color:var(--ink)">pdscheck</strong> is a static page. It runs entirely in your browser. There is no server, no analytics, no logging — just <code style="color:var(--ink-dim)">fetch()</code> calls to your PDS, multiple public relays, and <code style="color:var(--ink-dim)">plc.directory</code>.
+    </div>
+    <div style="margin-top:10px">
+      Some probes require CORS to be enabled on your PDS. If a probe fails with a CORS error, expand the row and run the printed <code style="color:var(--ink-dim)">curl</code> command from your terminal — that's the source of truth.
+    </div>
+    <div style="margin-top:10px">
+      Probe and relay-fanout design influenced by <a href="https://debug.hose.cam">debug.hose.cam</a> by fig &amp; bailey (MIT/Apache-2.0). Built for self-hosters; probe registry is a single array — add your own.
+    </div>
+  </footer>
+</div>
+
+<script>
+const PLC_DIRECTORY = "https://plc.directory";
+
+const RELAYS = [
+  { name: "Bluesky",            hostname: "bsky.network", note: "current" },
+  { name: "Microcosm Montreal", hostname: "relay.fire.hose.cam" },
+  { name: "Microcosm France",   hostname: "relay3.fr.hose.cam" },
+  { name: "Upcloud",            hostname: "relay.upcloud.world" },
+  { name: "Blacksky",           hostname: "atproto.africa",
+    missingApis: {
+      "com.atproto.sync.getHostStatus": "API not yet deployed",
+      "com.atproto.sync.getRepoStatus": "API not implemented",
+    } },
+  { name: "Bluesky East", hostname: "relay1.us-east.bsky.network", note: "future" },
+  { name: "Bluesky West", hostname: "relay1.us-west.bsky.network", note: "future" },
+];
+
+function looksLikeUrl(s) { return /^https?:\/\//i.test(s); }
+function looksLikeHandle(s) {
+  return !looksLikeUrl(s) && /^[a-z0-9][a-z0-9.\-]*\.[a-z]{2,}$/i.test(s);
+}
+function looksLikeDid(s) { return /^did:(plc|web):/.test(s); }
+
+function normalizeUrl(s) {
+  s = s.trim().replace(/\/+$/, "");
+  if (!looksLikeUrl(s)) s = "https://" + s;
+  return s;
+}
+
+async function timedFetch(url, opts = {}, timeoutMs = 8000) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, { ...opts, signal: ctl.signal });
+    const ms = Math.round(performance.now() - t0);
+    return { res, ms, error: null };
+  } catch (e) {
+    const ms = Math.round(performance.now() - t0);
+    return { res: null, ms, error: e };
+  } finally { clearTimeout(t); }
+}
+
+function curlFor(url, opts = {}) {
+  const method = (opts.method || "GET").toUpperCase();
+  const parts = ["curl", "-sSi"];
+  if (method !== "GET") parts.push("-X", method);
+  if (opts.headers) {
+    for (const [k, v] of Object.entries(opts.headers)) {
+      parts.push("-H", `'${k}: ${v}'`);
+    }
+  }
+  if (opts.body) {
+    parts.push("-H", `'content-type: application/json'`);
+    parts.push("--data-raw", `'${typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body)}'`);
+  }
+  parts.push(`'${url}'`);
+  return parts.join(" ");
+}
+
+async function fetchJson(url, opts = {}, timeoutMs = 8000) {
+  const r = await timedFetch(url, opts, timeoutMs);
+  if (r.error) return { ok: false, status: 0, error: r.error.message, ms: r.ms };
+  const text = await r.res.text();
+  if (!r.res.ok) return { ok: false, status: r.res.status, error: `${r.res.status} ${r.res.statusText}`, body: text, ms: r.ms };
+  try { return { ok: true, status: r.res.status, json: JSON.parse(text), body: text, ms: r.ms }; }
+  catch { return { ok: false, status: r.res.status, error: "Invalid JSON", body: text, ms: r.ms }; }
+}
+
+const PROBES = [
+
+  /* 0. resolve target → pdsUrl + did + handle (with dual resolver display) */
+  {
+    id: "resolve",
+    name: "Resolve target",
+    sub: "→ PDS URL + DID + handle",
+    deps: [],
+    async run(ctx) {
+      const input = ctx.input;
+      if (looksLikeUrl(input)) {
+        const url = normalizeUrl(input);
+        return {
+          status: "ok",
+          detail: `Treating input as PDS URL: ${url}`,
+          contribute: { pdsUrl: url, handle: null, did: null }
+        };
+      }
+      if (looksLikeDid(input)) {
+        const didDocUrl = input.startsWith("did:plc:")
+          ? `${PLC_DIRECTORY}/${input}`
+          : `https://${input.slice("did:web:".length)}/.well-known/did.json`;
+        const r = await fetchJson(didDocUrl);
+        if (!r.ok) return { status: "fail", detail: `DID document fetch failed: ${r.error}`, curl: curlFor(didDocUrl) };
+        const pds = (r.json.service || []).find(s => s.id === "#atproto_pds" || s.type === "AtprotoPersonalDataServer");
+        if (!pds) return { status: "fail", detail: "DID document has no #atproto_pds service entry.", raw: JSON.stringify(r.json, null, 2) };
+        const aka = (r.json.alsoKnownAs || []).find(a => a.startsWith("at://"));
+        const handle = aka ? aka.slice("at://".length) : null;
+        return {
+          status: "ok",
+          detail: `Resolved DID → ${pds.serviceEndpoint}${handle ? ` · handle ${handle}` : ''} (${r.ms}ms)`,
+          contribute: { pdsUrl: pds.serviceEndpoint.replace(/\/+$/,""), handle, did: input }
+        };
+      }
+      if (looksLikeHandle(input)) {
+        const handle = input.toLowerCase();
+        const dnsPromise = (async () => {
+          const r = await fetchJson(
+            `https://mozilla.cloudflare-dns.com/dns-query?name=_atproto.${encodeURIComponent(handle)}&type=TXT`,
+            { headers: { accept: "application/dns-json" } }
+          );
+          if (!r.ok) return { method: "DNS", did: null, error: r.error };
+          const answers = (r.json.Answer || []).map(a => a.data || "");
+          for (const a of answers) {
+            const stripped = a.replace(/^"|"$/g, "");
+            if (stripped.startsWith("did=")) {
+              return { method: "DNS", did: stripped.slice(4), error: null };
+            }
+          }
+          return { method: "DNS", did: null, error: "no _atproto TXT record" };
+        })();
+        const httpPromise = (async () => {
+          const wellKnownUrl = `https://${handle}/.well-known/atproto-did`;
+          const r = await timedFetch(wellKnownUrl);
+          if (r.error) return { method: "HTTP", did: null, error: r.error.message };
+          if (!r.res.ok) return { method: "HTTP", did: null, error: `${r.res.status}` };
+          const did = (await r.res.text()).trim();
+          if (!did.startsWith("did:")) return { method: "HTTP", did: null, error: "not a DID" };
+          return { method: "HTTP", did, error: null };
+        })();
+        const [dns, http] = await Promise.all([dnsPromise, httpPromise]);
+
+        const did = dns.did || http.did;
+        const dual = dns.did && http.did;
+        const disagree = dual && dns.did !== http.did;
+        const subtable = { kind: "resolvers", rows: [dns, http] };
+
+        if (!did) {
+          return {
+            status: "fail",
+            detail: `Couldn't resolve "${handle}" via DNS or HTTP.`,
+            remediation: `Set up a _atproto.${handle} DNS TXT record with "did=did:plc:..." OR serve /.well-known/atproto-did containing the DID. One of the two is required.`,
+            subtable,
+          };
+        }
+        if (disagree) {
+          const didDocUrl = http.did.startsWith("did:plc:")
+            ? `${PLC_DIRECTORY}/${http.did}` : `https://${http.did.slice(8)}/.well-known/did.json`;
+          const r = await fetchJson(didDocUrl);
+          const pdsEndpoint = r.ok
+            ? ((r.json.service || []).find(s => s.id === "#atproto_pds")?.serviceEndpoint || null)
+            : null;
+          return {
+            status: "warn",
+            detail: `DNS and HTTP resolvers disagree: DNS=${dns.did} HTTP=${http.did}. Clients will see inconsistent identity!`,
+            remediation: `Reconcile your handle resolution: either remove the DNS TXT record or update it to match the /.well-known file. Until they agree, some clients will see one identity and others will see another.`,
+            subtable,
+            contribute: pdsEndpoint
+              ? { pdsUrl: pdsEndpoint.replace(/\/+$/,""), handle, did: http.did }
+              : { handle, did: http.did },
+          };
+        }
+        const didDocUrl = did.startsWith("did:plc:") ? `${PLC_DIRECTORY}/${did}` : `https://${did.slice(8)}/.well-known/did.json`;
+        const r = await fetchJson(didDocUrl);
+        if (!r.ok) return { status: "fail", detail: `Resolved handle to ${did}, but DID document fetch failed: ${r.error}`, subtable, curl: curlFor(didDocUrl) };
+        const pds = (r.json.service || []).find(s => s.id === "#atproto_pds" || s.type === "AtprotoPersonalDataServer");
+        if (!pds) return { status: "fail", detail: `${did}: DID document has no #atproto_pds service.`, subtable, raw: JSON.stringify(r.json, null, 2) };
+
+        const onlyOne = !dual;
+        return {
+          status: onlyOne ? "warn" : "ok",
+          detail: onlyOne
+            ? `Only ${dns.did ? "DNS" : "HTTP"} resolution succeeded — clients using the other method may fail.`
+            : `${handle} → ${did} → ${pds.serviceEndpoint}`,
+          remediation: onlyOne
+            ? `Set up the missing resolver for redundancy: ${dns.did ? "add a /.well-known/atproto-did file" : "add a _atproto DNS TXT record"}.`
+            : undefined,
+          subtable,
+          contribute: { pdsUrl: pds.serviceEndpoint.replace(/\/+$/,""), handle, did }
+        };
+      }
+      return {
+        status: "fail",
+        detail: `Couldn't classify "${input}" as URL, handle, or DID.`,
+        remediation: `Try a full URL like https://pds.example.com or a handle like alice.bsky.social.`
+      };
+    }
+  },
+
+  {
+    id: "reach",
+    name: "Reachability",
+    sub: "/xrpc/_health",
+    deps: ["resolve"],
+    async run(ctx) {
+      const url = `${ctx.pdsUrl}/xrpc/_health`;
+      const { res, ms, error } = await timedFetch(url);
+      const curl = curlFor(url);
+      if (error) {
+        return { status: "fail",
+                 detail: `Could not connect (${error.message}) in ${ms}ms.`,
+                 remediation: `Check DNS, TLS cert, and that the PDS process is running. CORS errors here usually mean the underlying TLS or routing is wrong, not CORS.`,
+                 curl };
+      }
+      const text = await res.text();
+      if (res.ok) return { status: "ok", detail: `${res.status} in ${ms}ms`, raw: text.slice(0, 2000), curl };
+      if (res.status === 404) {
+        return { status: "warn",
+                 detail: `${res.status} — endpoint not present (older PDS or custom impl).`,
+                 remediation: `Not all PDS implementations expose /xrpc/_health. Subsequent probes will determine actual reachability.`,
+                 raw: text.slice(0, 2000), curl };
+      }
+      return { status: "fail", detail: `${res.status} ${res.statusText} in ${ms}ms`, raw: text.slice(0, 2000), curl };
+    }
+  },
+
+  {
+    id: "describe",
+    name: "describeServer",
+    sub: "com.atproto.server.describeServer",
+    deps: ["resolve"],
+    async run(ctx) {
+      const url = `${ctx.pdsUrl}/xrpc/com.atproto.server.describeServer`;
+      const r = await fetchJson(url);
+      const curl = curlFor(url);
+      if (!r.ok) return { status: "fail", detail: r.error, raw: r.body && r.body.slice(0, 4000), curl };
+      const json = r.json;
+      const missing = [];
+      if (!json.did) missing.push("did");
+      if (!Array.isArray(json.availableUserDomains)) missing.push("availableUserDomains");
+      let version = json.version || null;
+      if (!version) {
+        const h = await fetchJson(`${ctx.pdsUrl}/xrpc/_health`);
+        if (h.ok && h.json && h.json.version) version = h.json.version;
+      }
+      if (missing.length) {
+        return { status: "warn",
+                 detail: `OK in ${r.ms}ms but missing fields: ${missing.join(", ")}${version ? ` · v${version}`:''}`,
+                 remediation: `Update your PDS — newer atproto lexicons expect these fields.`,
+                 raw: JSON.stringify(json, null, 2), curl };
+      }
+      return { status: "ok",
+               detail: `${r.ms}ms · did=${json.did}${version ? ` · v${version}`:''} · openReg=${!json.inviteCodeRequired} · domains=[${(json.availableUserDomains||[]).join(", ")}]`,
+               raw: JSON.stringify(json, null, 2),
+               curl,
+               contribute: { serverDid: json.did, pdsVersion: version } };
+    }
+  },
+
+  {
+    id: "oauth-prm",
+    name: "OAuth /.well-known/oauth-protected-resource",
+    sub: "RFC 9728",
+    deps: ["resolve"],
+    async run(ctx) {
+      const url = `${ctx.pdsUrl}/.well-known/oauth-protected-resource`;
+      const { res, ms, error } = await timedFetch(url);
+      const curl = curlFor(url);
+      if (error) return { status: "fail", detail: error.message, curl };
+      const text = await res.text();
+      if (!res.ok) {
+        return { status: "fail",
+                 detail: `${res.status} ${res.statusText}`,
+                 remediation: `Most common cause: your reverse proxy isn't passing /.well-known/* to the PDS. Add a path rule for /.well-known/oauth-protected-resource and /.well-known/oauth-authorization-server.`,
+                 raw: text.slice(0, 2000), curl };
+      }
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.includes("json")) {
+        return { status: "fail",
+                 detail: `Got ${res.status} but content-type is "${ct}", not JSON.`,
+                 remediation: `Your proxy is probably serving an HTML page at /.well-known/. Route the path to the PDS.`,
+                 raw: text.slice(0, 2000), curl };
+      }
+      let json; try { json = JSON.parse(text); }
+      catch { return { status: "fail", detail: "Response is not valid JSON.", raw: text.slice(0, 2000), curl }; }
+      const issues = [];
+      if (!Array.isArray(json.authorization_servers) || json.authorization_servers.length === 0) issues.push("missing authorization_servers");
+      if (!json.resource) issues.push("missing resource");
+      if (issues.length) {
+        return { status: "warn", detail: `OK in ${ms}ms but: ${issues.join("; ")}`,
+                 remediation: `The PDS should advertise at least one authorization_server URL.`,
+                 raw: JSON.stringify(json, null, 2), curl };
+      }
+      return { status: "ok",
+               detail: `${ms}ms · authz=${json.authorization_servers[0]}`,
+               raw: JSON.stringify(json, null, 2),
+               curl,
+               contribute: { authzServer: json.authorization_servers[0] } };
+    }
+  },
+
+  {
+    id: "oauth-as",
+    name: "OAuth /.well-known/oauth-authorization-server",
+    sub: "RFC 8414",
+    deps: ["oauth-prm"],
+    async run(ctx) {
+      const base = ctx.authzServer ? ctx.authzServer.replace(/\/+$/,"") : ctx.pdsUrl;
+      const url = `${base}/.well-known/oauth-authorization-server`;
+      const r = await fetchJson(url);
+      const curl = curlFor(url);
+      if (!r.ok) return { status: "fail", detail: r.error, raw: r.body && r.body.slice(0, 2000), curl };
+      const required = ["issuer","authorization_endpoint","token_endpoint","pushed_authorization_request_endpoint","dpop_signing_alg_values_supported"];
+      const missing = required.filter(k => !(k in r.json));
+      if (missing.length) {
+        return { status: "warn",
+                 detail: `${r.ms}ms — missing: ${missing.join(", ")}`,
+                 remediation: `atproto OAuth requires PAR + DPoP. Missing fields here mean clients can't complete the OAuth dance.`,
+                 raw: JSON.stringify(r.json, null, 2), curl };
+      }
+      return { status: "ok",
+               detail: `${r.ms}ms · issuer=${r.json.issuer}`,
+               raw: JSON.stringify(r.json, null, 2), curl };
+    }
+  },
+
+  {
+    id: "did-roundtrip",
+    name: "DID → PDS round-trip",
+    sub: "DID document #atproto_pds points back here",
+    deps: ["resolve", "describe"],
+    async run(ctx) {
+      const did = ctx.did || ctx.serverDid;
+      if (!did) return { status: "skip", detail: "No user/server DID available — needs a handle, DID, or describeServer.did." };
+      const didDocUrl = did.startsWith("did:plc:") ? `${PLC_DIRECTORY}/${did}` : `https://${did.slice(8)}/.well-known/did.json`;
+      const r = await fetchJson(didDocUrl);
+      const curl = curlFor(didDocUrl);
+      if (!r.ok) return { status: "fail", detail: r.error, curl };
+      const pds = (r.json.service || []).find(s => s.id === "#atproto_pds" || s.type === "AtprotoPersonalDataServer");
+      if (!pds) return { status: "fail",
+                         detail: "DID document has no #atproto_pds service.",
+                         remediation: `Republish the DID document with a service entry id="#atproto_pds" pointing to your PDS.`,
+                         raw: JSON.stringify(r.json, null, 2), curl };
+      const advertised = pds.serviceEndpoint.replace(/\/+$/,"");
+      const actual = ctx.pdsUrl;
+      if (advertised !== actual) {
+        return { status: "warn",
+                 detail: `DID says PDS is ${advertised}, but we're talking to ${actual}.`,
+                 remediation: `If you migrated PDS, run com.atproto.identity.requestPlcOperationSignature and submit a PLC op updating the service endpoint. Until then, the network may route requests elsewhere.`,
+                 raw: JSON.stringify(r.json, null, 2), curl };
+      }
+      return { status: "ok", detail: `${r.ms}ms · ${did} → ${advertised} ✓`, raw: JSON.stringify(r.json, null, 2), curl };
+    }
+  },
+
+  {
+    id: "repo-describe",
+    name: "describeRepo",
+    sub: "com.atproto.repo.describeRepo",
+    deps: ["resolve"],
+    async run(ctx) {
+      if (!ctx.did) return { status: "skip", detail: "No user DID — this probe needs a handle or DID input." };
+      const url = `${ctx.pdsUrl}/xrpc/com.atproto.repo.describeRepo?repo=${encodeURIComponent(ctx.did)}`;
+      const r = await fetchJson(url);
+      const curl = curlFor(url);
+      if (!r.ok) return { status: "fail", detail: r.error, raw: r.body && r.body.slice(0,2000), curl };
+      return { status: "ok",
+               detail: `${r.ms}ms · handle=${r.json.handle} · ${(r.json.collections||[]).length} collections`,
+               raw: JSON.stringify(r.json, null, 2), curl };
+    }
+  },
+
+  {
+    id: "pds-repo-status",
+    name: "PDS repo status",
+    sub: "com.atproto.sync.getRepoStatus",
+    deps: ["resolve"],
+    async run(ctx) {
+      if (!ctx.did) return { status: "skip", detail: "No user DID — needs a handle or DID input." };
+      const url = `${ctx.pdsUrl}/xrpc/com.atproto.sync.getRepoStatus?did=${encodeURIComponent(ctx.did)}`;
+      const r = await fetchJson(url);
+      const curl = curlFor(url);
+      if (!r.ok) return { status: "fail", detail: r.error, raw: r.body && r.body.slice(0,2000), curl };
+      const j = r.json;
+      const status = j.active ? "ok" : "warn";
+      return {
+        status,
+        detail: j.active
+          ? `${r.ms}ms · active · rev=${j.rev || '?'}`
+          : `${r.ms}ms · INACTIVE — status=${j.status || '?'} · rev=${j.rev || '?'}`,
+        remediation: j.active ? undefined : `The PDS reports this repo as inactive (e.g. takendown, suspended, deactivated). Check the account's status on the PDS.`,
+        raw: JSON.stringify(j, null, 2),
+        curl,
+        contribute: { pdsRev: j.rev || null, pdsRepoActive: !!j.active }
+      };
+    }
+  },
+
+  {
+    id: "relay-host",
+    name: "Relay host status",
+    sub: "com.atproto.sync.getHostStatus across relays",
+    deps: ["resolve"],
+    async run(ctx) {
+      const hostname = new URL(ctx.pdsUrl).host;
+      const rows = await Promise.all(RELAYS.map(async (relay) => {
+        const url = `https://${relay.hostname}/xrpc/com.atproto.sync.getHostStatus?hostname=${encodeURIComponent(hostname)}`;
+        const r = await fetchJson(url, {}, 6000);
+        if (!r.ok) {
+          if (relay.missingApis && relay.missingApis["com.atproto.sync.getHostStatus"]) {
+            return { kind: "relay-host", relay, status: "info",
+                     statusText: relay.missingApis["com.atproto.sync.getHostStatus"], canRequestCrawl: false };
+          }
+          return { kind: "relay-host", relay, status: "fail", statusText: r.error, canRequestCrawl: false };
+        }
+        const j = r.json;
+        const active = j.status === "active";
+        return {
+          kind: "relay-host",
+          relay,
+          status: active ? "ok" : "warn",
+          statusText: j.status || "unknown",
+          canRequestCrawl: !active,
+          ms: r.ms,
+        };
+      }));
+      const okCount = rows.filter(r => r.status === "ok").length;
+      const failCount = rows.filter(r => r.status === "fail" || r.status === "warn").length;
+      const overall = okCount === 0 ? "fail" : failCount === 0 ? "ok" : "warn";
+      const detail = `${okCount}/${RELAYS.length} relays show this PDS as active`;
+      return {
+        status: overall,
+        detail,
+        remediation: overall !== "ok"
+          ? `For relays that don't have you as "active", click "request crawl" — they'll start indexing. New PDSes are invisible to relays until they request a crawl.`
+          : undefined,
+        subtable: { kind: "relay-host", rows, hostname },
+      };
+    }
+  },
+
+  {
+    id: "relay-repo",
+    name: "Relay repo sync state",
+    sub: "rev comparison across relays",
+    deps: ["pds-repo-status"],
+    async run(ctx) {
+      if (!ctx.did) return { status: "skip", detail: "No user DID — this probe needs a handle or DID input." };
+      const pdsRev = ctx.pdsRev;
+      const rows = await Promise.all(RELAYS.map(async (relay) => {
+        const url = `https://${relay.hostname}/xrpc/com.atproto.sync.getRepoStatus?did=${encodeURIComponent(ctx.did)}`;
+        const r = await fetchJson(url, {}, 6000);
+        if (!r.ok) {
+          if (relay.missingApis && relay.missingApis["com.atproto.sync.getRepoStatus"]) {
+            return { kind: "relay-repo", relay, status: "info",
+                     statusText: relay.missingApis["com.atproto.sync.getRepoStatus"], rev: null, revCmp: null };
+          }
+          return { kind: "relay-repo", relay, status: "fail", statusText: r.error, rev: null, revCmp: null };
+        }
+        const j = r.json;
+        const active = !!j.active;
+        const rev = j.rev || null;
+        let revCmp = null;
+        if (rev && pdsRev) {
+          if (rev === pdsRev) revCmp = "current";
+          else if (rev < pdsRev) revCmp = "behind";
+          else revCmp = "ahead";
+        }
+        return {
+          kind: "relay-repo",
+          relay,
+          status: active ? "ok" : "warn",
+          statusText: active ? "active" : (j.status || "inactive"),
+          rev,
+          revCmp,
+          ms: r.ms,
+        };
+      }));
+      const checked = rows.filter(r => r.status !== "info" && r.status !== "fail");
+      const behindCount = checked.filter(r => r.revCmp === "behind").length;
+      let overall = "ok";
+      if (checked.length === 0) overall = "skip";
+      else if (rows.some(r => r.status === "fail")) overall = "warn";
+      else if (behindCount > 0) overall = "warn";
+      return {
+        status: overall,
+        detail: pdsRev
+          ? `PDS rev=${pdsRev} · ${behindCount > 0 ? `${behindCount} relay(s) behind` : "all checked relays in sync"}`
+          : `Couldn't determine PDS rev; showing relay state only`,
+        remediation: behindCount > 0
+          ? `Relays falling behind usually means firehose connectivity is broken. Check that subscribeRepos is reachable over wss:// and that your reverse proxy is upgrading WebSocket connections.`
+          : undefined,
+        subtable: { kind: "relay-repo", rows, pdsRev },
+      };
+    }
+  },
+
+  {
+    id: "plc-pds-history",
+    name: "PLC PDS history",
+    sub: "audit log → past PDS endpoints",
+    deps: ["resolve"],
+    async run(ctx) {
+      if (!ctx.did) return { status: "skip", detail: "No DID — needs a handle or DID input." };
+      if (!ctx.did.startsWith("did:plc:")) return { status: "skip", detail: "did:web has no PLC audit log." };
+      const url = `${PLC_DIRECTORY}/${ctx.did}/log/audit`;
+      const r = await fetchJson(url, {}, 10000);
+      const curl = curlFor(url);
+      if (!r.ok) return { status: "fail", detail: r.error, curl };
+      const log = r.json;
+      let prev = null;
+      const history = [];
+      for (const op of log) {
+        let opPds = null;
+        const services = op.operation.services;
+        if (services && services.atproto_pds) opPds = services.atproto_pds.endpoint;
+        if (opPds === prev) continue;
+        prev = opPds;
+        history.push({ pds: opPds, date: op.createdAt });
+      }
+      history.reverse();
+      if (history[0]) history[0].current = true;
+      const past = history.length - 1;
+      return {
+        status: past > 0 ? "info" : "ok",
+        detail: past > 0
+          ? `${past} previous PDS endpoint(s) in PLC log · current: ${history[0]?.pds || '(none)'}`
+          : `No PDS migrations · always on ${history[0]?.pds || '(none)'}`,
+        subtable: { kind: "plc-pds", rows: history },
+        curl,
+      };
+    }
+  },
+
+  {
+    id: "plc-handle-history",
+    name: "PLC handle history",
+    sub: "audit log → past handles",
+    deps: ["resolve"],
+    async run(ctx) {
+      if (!ctx.did) return { status: "skip", detail: "No DID — needs a handle or DID input." };
+      if (!ctx.did.startsWith("did:plc:")) return { status: "skip", detail: "did:web has no PLC audit log." };
+      const url = `${PLC_DIRECTORY}/${ctx.did}/log/audit`;
+      const r = await fetchJson(url, {}, 10000);
+      const curl = curlFor(url);
+      if (!r.ok) return { status: "fail", detail: r.error, curl };
+      const log = r.json;
+      let prev = null;
+      const history = [];
+      for (const op of log) {
+        let opHandle = null;
+        if (op.operation.alsoKnownAs) {
+          for (const aka of op.operation.alsoKnownAs) {
+            if (aka.startsWith("at://")) { opHandle = aka.slice("at://".length); break; }
+          }
+        }
+        if (opHandle === prev) continue;
+        prev = opHandle;
+        history.push({ handle: opHandle, date: op.createdAt });
+      }
+      history.reverse();
+      const past = history.length - 1;
+      return {
+        status: past > 0 ? "info" : "ok",
+        detail: past > 0
+          ? `${past} previous handle(s) · current: @${history[0]?.handle || '?'}`
+          : `No handle changes · always @${history[0]?.handle || '?'}`,
+        subtable: { kind: "plc-handle", rows: history },
+        curl,
+      };
+    }
+  },
+];
+
+const STATUS_GLYPH = {
+  pending: "·", running: "◌",
+  ok: "✓", warn: "⚠", fail: "✗", skip: "—", info: "ⓘ",
+};
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v !== null && v !== undefined) e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null || c === false) continue;
+    e.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return e;
+}
+
+function renderInitialProbes() {
+  const root = document.getElementById("probes");
+  root.innerHTML = "";
+  PROBES.forEach((p, i) => {
+    const row = el("div", { class: "probe", id: `probe-${p.id}` });
+    const head = el("div", { class: "probe-head", onclick: () => row.classList.toggle("open") },
+      el("span", { class: "probe-num mono" }, String(i).padStart(2, "0")),
+      el("span", { class: "status-glyph mono s-pending", id: `glyph-${p.id}` }, STATUS_GLYPH.pending),
+      el("span", { class: "probe-name" },
+        p.name,
+        p.sub ? el("span", { class: "sub mono" }, p.sub) : null
+      ),
+      el("span", { class: "probe-meta mono", id: `meta-${p.id}` }, "queued"),
+      el("span", { class: "chev mono" }, "▶"),
+    );
+    const body = el("div", { class: "probe-body", id: `body-${p.id}` },
+      el("div", { class: "desc" }, "Awaiting run…"));
+    row.append(head, body);
+    root.append(row);
+  });
+}
+
+function setProbeStatus(id, status, meta = "") {
+  const glyph = document.getElementById(`glyph-${id}`);
+  const metaEl = document.getElementById(`meta-${id}`);
+  glyph.className = `status-glyph mono s-${status}`;
+  glyph.textContent = STATUS_GLYPH[status] || "?";
+  metaEl.textContent = meta;
+  const row = document.getElementById(`probe-${id}`);
+  row.classList.remove("s-ok-row","s-warn-row","s-fail-row","s-skip-row","s-info-row");
+  row.classList.add(`s-${status}-row`);
+}
+
+function renderResolversSubtable(sub) {
+  const t = el("table", { class: "subtable mono" });
+  t.append(el("thead", {}, el("tr", {},
+    el("th", {}, "method"), el("th", {}, "DID"), el("th", {}, "result"),
+  )));
+  const body = el("tbody");
+  for (const r of sub.rows) {
+    body.append(el("tr", {},
+      el("td", { class: "nowrap" }, r.method),
+      el("td", {}, r.did ? el("code", {}, r.did) : "—"),
+      el("td", {}, r.error ? el("span", { class: "pill warn" }, r.error) : el("span", { class: "pill ok" }, "ok")),
+    ));
+  }
+  t.append(body);
+  return t;
+}
+
+function renderRelayHostSubtable(sub) {
+  const t = el("table", { class: "subtable mono" });
+  t.append(el("thead", {}, el("tr", {},
+    el("th", {}, "relay"), el("th", {}, "status"), el("th", {}, "action"),
+  )));
+  const body = el("tbody");
+  for (const r of sub.rows) {
+    const actionCell = el("td", {});
+    if (r.canRequestCrawl) {
+      const btn = el("button", { class: "mini-btn" }, "request crawl");
+      btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "requesting…";
+        const url = `https://${r.relay.hostname}/xrpc/com.atproto.sync.requestCrawl`;
+        const body = JSON.stringify({ hostname: sub.hostname });
+        const res = await timedFetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+        }, 10000);
+        if (res.error || !res.res || !res.res.ok) {
+          btn.textContent = res.error?.message || (res.res && `${res.res.status}`) || "failed";
+          btn.style.color = "var(--fail)";
+        } else {
+          btn.textContent = "submitted ✓";
+          btn.style.color = "var(--ok)";
+        }
+      });
+      actionCell.append(btn);
+    } else {
+      actionCell.textContent = "—";
+    }
+    body.append(el("tr", {},
+      el("td", { class: "nowrap" },
+        el("span", {}, r.relay.name),
+        r.relay.note ? el("span", { class: "pill skip", style: "margin-left:6px" }, r.relay.note) : null,
+        el("div", { class: "hostname", style: "font-size:10px" }, r.relay.hostname),
+      ),
+      el("td", {},
+        r.status === "ok"   ? el("span", { class: "pill ok" }, r.statusText) :
+        r.status === "warn" ? el("span", { class: "pill warn" }, r.statusText) :
+        r.status === "info" ? el("span", { class: "pill info" }, r.statusText) :
+                              el("span", { class: "pill fail" }, r.statusText),
+      ),
+      actionCell,
+    ));
+  }
+  t.append(body);
+  return t;
+}
+
+function renderRelayRepoSubtable(sub) {
+  const t = el("table", { class: "subtable mono" });
+  t.append(el("thead", {}, el("tr", {},
+    el("th", {}, "relay"), el("th", {}, "repo"), el("th", {}, "rev / sync"),
+  )));
+  const body = el("tbody");
+  for (const r of sub.rows) {
+    let revCell;
+    if (r.status === "info" || r.status === "fail") {
+      revCell = el("span", { class: "pill " + (r.status === "info" ? "info" : "fail") }, r.statusText || "—");
+    } else {
+      const rev = r.rev ? r.rev.slice(0, 12) + (r.rev.length > 12 ? "…" : "") : "—";
+      const cmpPill =
+        r.revCmp === "current" ? el("span", { class: "pill ok" }, "current") :
+        r.revCmp === "behind"  ? el("span", { class: "pill warn", title: `relay rev: ${r.rev}` }, "behind") :
+        r.revCmp === "ahead"   ? el("span", { class: "pill info", title: `relay rev: ${r.rev}` }, "ahead") :
+                                 el("span", { class: "pill skip" }, "—");
+      revCell = el("span", {},
+        el("code", { style: "color:var(--ink-dim);margin-right:8px" }, rev),
+        cmpPill,
+      );
+    }
+    body.append(el("tr", {},
+      el("td", { class: "nowrap" },
+        el("span", {}, r.relay.name),
+        el("div", { class: "hostname", style: "font-size:10px" }, r.relay.hostname),
+      ),
+      el("td", {},
+        r.status === "ok" ? el("span", { class: "pill ok" }, r.statusText) :
+        r.status === "warn" ? el("span", { class: "pill warn" }, r.statusText) :
+        el("span", { class: "pill skip" }, "—"),
+      ),
+      el("td", {}, revCell),
+    ));
+  }
+  t.append(body);
+  return t;
+}
+
+function renderPdsHistorySubtable(sub) {
+  const t = el("table", { class: "subtable mono" });
+  t.append(el("thead", {}, el("tr", {},
+    el("th", {}, "date"), el("th", {}, "PDS endpoint"), el("th", {}, ""),
+  )));
+  const body = el("tbody");
+  for (const ev of sub.rows) {
+    body.append(el("tr", {},
+      el("td", { class: "nowrap" }, el("code", {}, (ev.date || "").slice(0, 10))),
+      el("td", {}, ev.pds || "(none)"),
+      el("td", {}, ev.current ? el("span", { class: "pill ok" }, "current") : el("span", { class: "pill skip" }, "previous")),
+    ));
+  }
+  t.append(body);
+  return t;
+}
+
+function renderHandleHistorySubtable(sub) {
+  const t = el("table", { class: "subtable mono" });
+  t.append(el("thead", {}, el("tr", {},
+    el("th", {}, "date"), el("th", {}, "handle"), el("th", {}, ""),
+  )));
+  const body = el("tbody");
+  sub.rows.forEach((ev, i) => {
+    body.append(el("tr", {},
+      el("td", { class: "nowrap" }, el("code", {}, (ev.date || "").slice(0, 10))),
+      el("td", {}, "@" + (ev.handle || "?")),
+      el("td", {}, i === 0 ? el("span", { class: "pill ok" }, "current") : el("span", { class: "pill skip" }, "previous")),
+    ));
+  });
+  t.append(body);
+  return t;
+}
+
+function renderProbeBody(id, result) {
+  const body = document.getElementById(`body-${id}`);
+  body.innerHTML = "";
+  body.append(el("div", { class: "desc" }, result.detail || "(no detail)"));
+  if (result.remediation && result.status !== "ok") {
+    body.append(el("div", { class: "remediation" }, "fix · " + result.remediation));
+  }
+  if (result.subtable) {
+    let t;
+    switch (result.subtable.kind) {
+      case "resolvers":   t = renderResolversSubtable(result.subtable); break;
+      case "relay-host":  t = renderRelayHostSubtable(result.subtable); break;
+      case "relay-repo":  t = renderRelayRepoSubtable(result.subtable); break;
+      case "plc-pds":     t = renderPdsHistorySubtable(result.subtable); break;
+      case "plc-handle":  t = renderHandleHistorySubtable(result.subtable); break;
+    }
+    if (t) body.append(t);
+  }
+  if (result.raw) body.append(el("div", { class: "raw" }, result.raw));
+  if (result.curl) {
+    const wrap = el("div", { class: "curl-block" });
+    const lbl = el("div", { class: "label" },
+      el("span", {}, "equivalent curl"),
+      el("button", {
+        class: "copy-btn",
+        onclick: () => {
+          navigator.clipboard.writeText(result.curl);
+          const b = lbl.querySelector(".copy-btn");
+          const old = b.textContent; b.textContent = "copied"; setTimeout(()=>b.textContent=old, 1200);
+        }
+      }, "copy")
+    );
+    wrap.append(lbl, el("div", { class: "raw" }, result.curl));
+    body.append(wrap);
+  }
+}
+
+async function runAll(input) {
+  const ctx = { input };
+  const results = {};
+  let okN = 0, warnN = 0, failN = 0;
+  const total = PROBES.length;
+  let done = 0;
+  const t0 = performance.now();
+
+  document.getElementById("summary").classList.add("show");
+  document.getElementById("sum-target").textContent = input;
+  document.getElementById("sum-ok").textContent = "0";
+  document.getElementById("sum-warn").textContent = "0";
+  document.getElementById("sum-fail").textContent = "0";
+  document.getElementById("sum-elapsed").textContent = "0ms";
+  document.getElementById("progress").style.width = "0%";
+
+  for (const p of PROBES) {
+    const blocked = p.deps.some(d => results[d] && results[d].status === "fail");
+    if (blocked) {
+      const result = { status: "skip", detail: `Skipped — dependency failed (${p.deps.join(", ")}).` };
+      results[p.id] = result;
+      setProbeStatus(p.id, "skip", "skipped");
+      renderProbeBody(p.id, result);
+      done++;
+      document.getElementById("progress").style.width = `${(done/total)*100}%`;
+      continue;
+    }
+
+    setProbeStatus(p.id, "running", "running…");
+    document.getElementById(`body-${p.id}`).innerHTML = "";
+    document.getElementById(`body-${p.id}`).append(
+      el("div", { class: "desc" }, el("span", { class: "spinner" }), " running probe…")
+    );
+
+    let result;
+    try { result = await p.run(ctx); }
+    catch (e) { result = { status: "fail", detail: `Probe threw: ${e.message}` }; }
+    results[p.id] = result;
+    if (result.contribute) Object.assign(ctx, result.contribute);
+
+    setProbeStatus(p.id, result.status,
+      result.status === "ok"   ? "ok" :
+      result.status === "warn" ? "warn" :
+      result.status === "fail" ? "fail" :
+      result.status === "skip" ? "skip" :
+      result.status === "info" ? "info" : "");
+    renderProbeBody(p.id, result);
+
+    if (result.status === "ok") okN++;
+    else if (result.status === "warn") warnN++;
+    else if (result.status === "fail") failN++;
+
+    done++;
+    document.getElementById("sum-ok").textContent   = String(okN);
+    document.getElementById("sum-warn").textContent = String(warnN);
+    document.getElementById("sum-fail").textContent = String(failN);
+    document.getElementById("sum-elapsed").textContent = `${Math.round(performance.now()-t0)}ms`;
+    document.getElementById("progress").style.width = `${(done/total)*100}%`;
+  }
+}
+
+function stamp() {
+  const d = new Date();
+  document.getElementById("timestamp").textContent =
+    d.toISOString().replace("T"," ").slice(0,19) + " UTC";
+}
+stamp(); setInterval(stamp, 30000);
+
+renderInitialProbes();
+
+const btn = document.getElementById("run-btn");
+const inp = document.getElementById("target");
+
+async function go() {
+  const v = inp.value.trim();
+  if (!v) { inp.focus(); return; }
+  btn.disabled = true; btn.textContent = "RUNNING…";
+  PROBES.forEach(p => {
+    setProbeStatus(p.id, "pending", "queued");
+    document.getElementById(`body-${p.id}`).innerHTML = "";
+    document.getElementById(`body-${p.id}`).append(el("div", { class: "desc" }, "Awaiting run…"));
+    document.getElementById(`probe-${p.id}`).classList.remove("open");
+  });
+  try { await runAll(v); }
+  finally { btn.disabled = false; btn.textContent = "RUN CHECKS"; }
+}
+
+btn.addEventListener("click", go);
+inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+
+document.querySelectorAll(".example-chip").forEach(c => {
+  c.addEventListener("click", () => { inp.value = c.dataset.ex; inp.focus(); });
+});
+
+document.getElementById("reset-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  inp.value = "";
+  document.getElementById("summary").classList.remove("show");
+  renderInitialProbes();
+  inp.focus();
+});
+
+inp.focus();
+</script>
+</body>
+</html>
