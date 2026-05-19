@@ -4,27 +4,38 @@
 {% block content %}
 <div class="container">
 
-  <div class="panel__title" style="font-size:1.1rem; margin-bottom:16px;">
+  <div class="panel__title" style="font-size:1.1rem; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
     &#x1F512; {{ club_id }} club
-    <span style="font-size:.72rem; color:var(--muted); font-family:var(--mono); margin-left:8px;">
+    <span style="font-size:.72rem; color:var(--muted); font-family:var(--mono);">
       {{ member_count }} member{{ 's' if member_count != 1 else '' }} ·
       {% if running %}<span style="color:var(--green);">connected</span>{% else %}<span style="color:var(--red);">offline</span>{% endif %}
     </span>
+    <span id="live-dot" title="live" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-left:4px;"></span>
   </div>
 
   <div class="home-layout">
     <div class="home-main">
 
       <!-- Post form -->
-      <form method="post" action="/club/post" style="margin-bottom:16px;">
+      <form id="post-form" enctype="multipart/form-data" style="margin-bottom:16px;">
         <div style="display:flex; gap:8px; align-items:flex-end;">
-          <textarea name="text" rows="2" placeholder="Write something to the club..." required
-            style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px;
-                   background:var(--surface); color:var(--text); font-size:.88rem; resize:vertical;
-                   font-family:inherit;"></textarea>
-          <button type="submit"
+          <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+            <textarea id="post-text" name="text" rows="2" placeholder="Write something to the club..."
+              style="padding:8px 10px; border:1px solid var(--border); border-radius:6px;
+                     background:var(--surface); color:var(--text); font-size:.88rem; resize:vertical;
+                     font-family:inherit;"></textarea>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <label for="post-file" style="cursor:pointer; font-size:.75rem; color:var(--accent); display:flex; align-items:center; gap:4px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                Attach file
+              </label>
+              <input id="post-file" name="file" type="file" style="display:none" accept="image/*,video/*,audio/*,.pdf,.txt">
+              <span id="file-label" style="font-size:.72rem; color:var(--muted);"></span>
+            </div>
+          </div>
+          <button type="submit" id="send-btn"
             style="padding:8px 16px; background:var(--accent); color:#fff; border:none;
-                   border-radius:6px; cursor:pointer; font-size:.85rem; white-space:nowrap;">
+                   border-radius:6px; cursor:pointer; font-size:.85rem; white-space:nowrap; align-self:flex-start;">
             Publish encrypted
           </button>
         </div>
@@ -35,25 +46,37 @@
       </form>
 
       <!-- Feed -->
-      {% if posts %}
-        <div class="feed">
+      <div id="feed">
+        {% if posts %}
           {% for post in posts %}
-          <div class="post">
+          <div class="post" data-cid="{{ post.cid }}">
             <div class="post__meta">
               <span class="mono" style="font-size:.72rem; color:var(--accent);">{{ post.handle }}</span>
               <span>{{ post.ts_human }}</span>
               <span class="mono" style="font-size:.65rem; color:var(--muted);">{{ club_id }}</span>
             </div>
-            <div class="post__text">{{ post.text }}</div>
+            {% if post.text %}<div class="post__text">{{ post.text }}</div>{% endif %}
+            {% if post.file_ref %}
+            <div class="post__attach" style="margin-top:6px;">
+              {% if post.mime and post.mime.startswith('image/') %}
+                <img src="/club/file/{{ post.file_ref }}" alt="{{ post.file_name }}"
+                     style="max-width:100%; max-height:320px; border-radius:6px; display:block; cursor:pointer;"
+                     onclick="window.open(this.src)">
+              {% else %}
+                <a href="/club/file/{{ post.file_ref }}" download="{{ post.file_name }}"
+                   style="font-size:.8rem; color:var(--accent);">&#x1F4CE; {{ post.file_name }}</a>
+              {% endif %}
+            </div>
+            {% endif %}
           </div>
           {% endfor %}
-        </div>
-      {% else %}
-        <div class="empty">
-          <div class="empty__icon">&#x1F510;</div>
-          No club posts yet. Be the first.
-        </div>
-      {% endif %}
+        {% else %}
+          <div class="empty" id="empty-state">
+            <div class="empty__icon">&#x1F510;</div>
+            No club posts yet. Be the first.
+          </div>
+        {% endif %}
+      </div>
 
     </div>
 
@@ -62,7 +85,7 @@
         <div class="panel__title">about this club</div>
         <div style="font-size:.75rem; font-family:var(--mono); color:var(--muted); line-height:2;">
           <div>id: <span style="color:var(--text)">{{ club_id }}</span></div>
-          <div>members: <span style="color:var(--text)">{{ member_count }}</span></div>
+          <div>members: <span style="color:var(--text)" id="member-count">{{ member_count }}</span></div>
           <div>encryption: <span style="color:var(--text)">NaCl hybrid</span></div>
           <div>status: <span style="color:{% if running %}var(--green){% else %}var(--red){% endif %}">
             {% if running %}connected{% else %}offline{% endif %}
@@ -81,4 +104,106 @@
   </div>
 
 </div>
+
+<script>
+(function () {
+  const dot = document.getElementById('live-dot');
+  const feed = document.getElementById('feed');
+  const form = document.getElementById('post-form');
+  const fileInput = document.getElementById('post-file');
+  const fileLabel = document.getElementById('file-label');
+  const sendBtn = document.getElementById('send-btn');
+
+  // File input label
+  fileInput.addEventListener('change', () => {
+    fileLabel.textContent = fileInput.files[0] ? fileInput.files[0].name : '';
+  });
+
+  // Render a post object from SSE into a DOM element
+  function buildPost(d) {
+    const div = document.createElement('div');
+    div.className = 'post';
+    div.dataset.cid = d.cid || '';
+
+    const meta = document.createElement('div');
+    meta.className = 'post__meta';
+    meta.innerHTML =
+      `<span class="mono" style="font-size:.72rem;color:var(--accent);">${esc(d.handle)}</span>` +
+      `<span>${esc(d.ts_human)}</span>` +
+      `<span class="mono" style="font-size:.65rem;color:var(--muted);">{{ club_id }}</span>`;
+    div.appendChild(meta);
+
+    if (d.text) {
+      const p = document.createElement('div');
+      p.className = 'post__text';
+      p.textContent = d.text;
+      div.appendChild(p);
+    }
+
+    if (d.file_ref) {
+      const att = document.createElement('div');
+      att.className = 'post__attach';
+      att.style.marginTop = '6px';
+      if (d.mime && d.mime.startsWith('image/')) {
+        att.innerHTML = `<img src="/club/file/${esc(d.file_ref)}" alt="${esc(d.file_name)}"
+          style="max-width:100%;max-height:320px;border-radius:6px;display:block;cursor:pointer;"
+          onclick="window.open(this.src)">`;
+      } else {
+        att.innerHTML = `<a href="/club/file/${esc(d.file_ref)}" download="${esc(d.file_name)}"
+          style="font-size:.8rem;color:var(--accent);">&#x1F4CE; ${esc(d.file_name)}</a>`;
+      }
+      div.appendChild(att);
+    }
+    return div;
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function prependPost(d) {
+    const empty = document.getElementById('empty-state');
+    if (empty) empty.remove();
+    feed.prepend(buildPost(d));
+  }
+
+  // SSE
+  let es;
+  function connect() {
+    es = new EventSource('/club/stream');
+    es.onopen = () => { dot.style.background = 'var(--green)'; };
+    es.onmessage = (e) => {
+      try { prependPost(JSON.parse(e.data)); } catch (_) {}
+    };
+    es.onerror = () => {
+      dot.style.background = 'var(--red)';
+      es.close();
+      setTimeout(connect, 4000);
+    };
+  }
+  connect();
+
+  // Intercept form submit → fetch, no reload
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = document.getElementById('post-text').value.trim();
+    const file = fileInput.files[0];
+    if (!text && !file) return;
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = '…';
+
+    const fd = new FormData(form);
+    try {
+      await fetch('/club/post', { method: 'POST', body: fd });
+    } catch (_) {}
+
+    document.getElementById('post-text').value = '';
+    fileInput.value = '';
+    fileLabel.textContent = '';
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Publish encrypted';
+  });
+})();
+</script>
 {% endblock %}

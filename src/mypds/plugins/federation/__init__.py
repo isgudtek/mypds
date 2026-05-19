@@ -9,9 +9,12 @@ import asyncio
 import datetime
 import json
 import logging
+import mimetypes
+import os
 import time
 import uuid
 
+import aiohttp
 import jwt as _jwt
 from aiohttp import web
 
@@ -66,6 +69,37 @@ SETTINGS = [
 
 _peer_runner: FederationPeer | None = None
 _peer_task: asyncio.Task | None = None
+_club_streams: dict = {}  # club_id -> list[asyncio.Queue]
+
+
+def _broadcast_club(club_id: str, payload: dict):
+    for q in list(_club_streams.get(club_id, [])):
+        try:
+            q.put_nowait(payload)
+        except asyncio.QueueFull:
+            pass
+
+
+def _get_club_files_dir(db) -> str:
+    row = db.con.execute("PRAGMA database_list").fetchone()
+    db_path = row[2] if row else ""
+    base = os.path.dirname(db_path) if db_path else "/tmp"
+    d = os.path.join(base, "club_files")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+async def _fanout_join(client, peer_pds_url: str, payload: dict):
+    """Fire-and-forget: push new member info to an existing peer."""
+    try:
+        async with client.post(
+            f"{peer_pds_url}/xrpc/space.mycrab.federation.join",
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as _:
+            pass
+    except Exception:
+        pass
 
 
 def _ensure_tables(db):
@@ -143,6 +177,7 @@ def _start_peer(app, ws, club_id, seed_url, membership, whitelist_pattern, own_p
         seed_url=seed_url,
         membership=membership,
         whitelist_pattern=whitelist_pattern,
+        on_new_record=_broadcast_club,
     )
     _peer_task = asyncio.create_task(_peer_runner.run())
     logger.info(f"[federation] started club={club_id} seed={seed_url}")
@@ -185,12 +220,25 @@ async def club_feed(request: web.Request):
         except Exception:
             ts_human = created_at
 
+        try:
+            pl = json.loads(plaintext)
+            post_text = pl.get("text", plaintext)
+            file_ref = pl.get("file", "")
+            file_name = pl.get("file_name", "")
+            mime = pl.get("mime", "")
+        except Exception:
+            post_text = plaintext
+            file_ref = file_name = mime = ""
+
         posts.append({
             "cid": cid,
             "author_did": author_did,
             "handle": handle,
             "rkey": rkey,
-            "text": plaintext,
+            "text": post_text,
+            "file_ref": file_ref,
+            "file_name": file_name,
+            "mime": mime,
             "ts_human": ts_human,
             "created_at": created_at,
         })
@@ -220,11 +268,34 @@ async def club_post(request: web.Request):
 
     data = await request.post()
     text = data.get("text", "").strip()
-    if not text:
-        raise web.HTTPFound("/club")
-
     own_did = sess["did"]
     privkey, pubkey = _get_or_create_keypair(db, club_id)
+
+    # Handle optional file upload
+    file_ref = file_name = mime = ""
+    file_field = data.get("file")
+    if file_field and hasattr(file_field, "filename") and file_field.filename:
+        raw = file_field.file.read()
+        if raw:
+            ext = os.path.splitext(file_field.filename)[1].lower() or ".bin"
+            fname = f"{uuid.uuid4().hex}{ext}"
+            files_dir = _get_club_files_dir(db)
+            with open(os.path.join(files_dir, fname), "wb") as fh:
+                fh.write(raw)
+            file_ref = fname
+            file_name = file_field.filename
+            mime = file_field.content_type or mimetypes.guess_type(file_field.filename)[0] or "application/octet-stream"
+
+    if not text and not file_ref:
+        raise web.HTTPFound("/club")
+
+    # Build plaintext payload (JSON for rich posts, plain string for text-only backward compat)
+    pl: dict = {"text": text}
+    if file_ref:
+        pl["file"] = file_ref
+        pl["file_name"] = file_name
+        pl["mime"] = mime
+    plaintext_str = json.dumps(pl)
 
     members = db.con.execute(
         "SELECT did, pubkey FROM federation_member WHERE club_id=?", (club_id,)
@@ -233,7 +304,7 @@ async def club_post(request: web.Request):
     if own_did not in member_map:
         member_map[own_did] = pubkey
 
-    encrypted = crypto.encrypt(text, member_map)
+    encrypted = crypto.encrypt(plaintext_str, member_map)
     created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     rkey = created_at.replace(":", "").replace("-", "").replace("+", "")[:17]
 
@@ -257,11 +328,11 @@ async def club_post(request: web.Request):
     }, cfg.get("jwt_access_secret", ""), "HS256")
 
     # Use local URL for internal calls — pds_pfx may not resolve from inside VPS
-    pds_url = ws.get_node_setting("pds_local_url") or cfg.get("pds_pfx", "")
+    pds_local = ws.get_node_setting("pds_local_url") or cfg.get("pds_pfx", "")
     client = request.app[MILLIPDS_AIOHTTP_CLIENT]
     try:
         async with client.post(
-            f"{pds_url}/xrpc/com.atproto.repo.putRecord",
+            f"{pds_local}/xrpc/com.atproto.repo.putRecord",
             json={"repo": own_did, "collection": CLUB_NSID, "rkey": rkey, "record": record},
             headers={"Authorization": f"Bearer {access_token}"},
         ) as resp:
@@ -272,8 +343,21 @@ async def club_post(request: web.Request):
                     "INSERT OR IGNORE INTO federation_record"
                     " (cid, author_did, rkey, club_id, plaintext, created_at, indexed_at)"
                     " VALUES (?,?,?,?,?,?,?)",
-                    (actual_cid, own_did, rkey, club_id, text, created_at, created_at)
+                    (actual_cid, own_did, rkey, club_id, plaintext_str, created_at, created_at)
                 )
+                try:
+                    ts = datetime.datetime.fromisoformat(created_at.replace("Z", ""))
+                    ts_human = ts.strftime("%-d %b %Y, %H:%M")
+                except Exception:
+                    ts_human = created_at
+                pds_host = cfg.get("pds_pfx", "").replace("https://", "").replace("http://", "").split("/")[0]
+                _broadcast_club(club_id, {
+                    "cid": actual_cid, "author_did": own_did,
+                    "handle": pds_host or own_did, "rkey": rkey,
+                    "text": text, "file_ref": file_ref,
+                    "file_name": file_name, "mime": mime,
+                    "ts_human": ts_human, "created_at": created_at,
+                })
             else:
                 logger.warning(f"putRecord {resp.status}: {resp_data}")
     except Exception as e:
@@ -348,6 +432,20 @@ async def federation_join(request: web.Request):
     if _peer_runner:
         _peer_runner.notify_new_member()
 
+    # Fan-out: push new member info to all existing peers so they discover immediately
+    fanout_payload = {
+        "did": joining_did, "pubkey": joining_pubkey,
+        "pds_url": joining_pds, "club_id": club_id, "peers": [],
+    }
+    client = request.app[MILLIPDS_AIOHTTP_CLIENT]
+    existing = db.con.execute(
+        "SELECT pds_url FROM federation_member WHERE club_id=? AND did!=? AND pds_url!=''",
+        (club_id, joining_did)
+    ).fetchall()
+    for (peer_url,) in existing:
+        if peer_url and peer_url.rstrip("/") != joining_pds.rstrip("/"):
+            asyncio.create_task(_fanout_join(client, peer_url, fanout_payload))
+
     # Return full member list
     members = db.con.execute(
         "SELECT did, pubkey, pds_url FROM federation_member WHERE club_id=?", (club_id,)
@@ -357,6 +455,70 @@ async def federation_join(request: web.Request):
         "club_id": club_id,
         "members": [{"did": r[0], "pubkey": r[1], "pds_url": r[2]} for r in members]
     })
+
+
+@routes.get("/club/stream")
+async def club_stream(request: web.Request):
+    """SSE endpoint — pushes new posts to connected browsers in real time."""
+    sess = get_session(request)
+    if not sess:
+        raise web.HTTPUnauthorized()
+    db = request.app[MILLIPDS_DB]
+    ws = get_web_store(request)
+    club_id = ws.get_plugin_setting(APP_NAME, "club_id", "mycrab")
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+    _club_streams.setdefault(club_id, []).append(queue)
+    resp = web.StreamResponse(headers={
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    })
+    await resp.prepare(request)
+    try:
+        while True:
+            try:
+                payload = await asyncio.wait_for(queue.get(), timeout=25)
+                await resp.write(f"data: {json.dumps(payload)}\n\n".encode())
+            except asyncio.TimeoutError:
+                await resp.write(b": ping\n\n")
+    except (ConnectionResetError, asyncio.CancelledError):
+        pass
+    finally:
+        streams = _club_streams.get(club_id, [])
+        if queue in streams:
+            streams.remove(queue)
+    return resp
+
+
+@routes.get("/club/file/{filename}")
+async def club_file(request: web.Request):
+    """Serve a club file attachment — gated to club members only."""
+    sess = get_session(request)
+    if not sess:
+        raise web.HTTPUnauthorized()
+    db = request.app[MILLIPDS_DB]
+    _ensure_tables(db)
+    ws = get_web_store(request)
+    club_id = ws.get_plugin_setting(APP_NAME, "club_id", "mycrab")
+
+    own_did = sess["did"]
+    member = db.con.execute(
+        "SELECT did FROM federation_member WHERE club_id=? AND did=?", (club_id, own_did)
+    ).fetchone()
+    if not member:
+        raise web.HTTPForbidden()
+
+    filename = request.match_info["filename"]
+    if "/" in filename or ".." in filename:
+        raise web.HTTPBadRequest()
+
+    path = os.path.join(_get_club_files_dir(db), filename)
+    if not os.path.isfile(path):
+        raise web.HTTPNotFound()
+
+    content_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    return web.FileResponse(path, headers={"Content-Type": content_type})
 
 
 async def _start_peer_on_startup(app):

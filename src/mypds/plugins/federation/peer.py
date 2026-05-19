@@ -8,6 +8,7 @@ Firehose: subscribe to each peer's /xrpc/com.atproto.sync.subscribeRepos,
 """
 import asyncio
 import base64
+import datetime
 import json
 import logging
 import time
@@ -26,7 +27,7 @@ RECONNECT_DELAY = 30  # seconds
 class FederationPeer:
     def __init__(self, db_conn, own_did: str, own_privkey: str, own_pubkey: str,
                  club_id: str, seed_url: str, membership: str, whitelist_pattern: str,
-                 own_pds_url: str = ""):
+                 own_pds_url: str = "", on_new_record=None):
         self.db = db_conn
         self.own_did = own_did
         self.own_privkey = own_privkey
@@ -36,10 +37,12 @@ class FederationPeer:
         self.seed_url = seed_url.rstrip("/")
         self.membership = membership  # "open" or "whitelist"
         self.whitelist_pattern = whitelist_pattern  # e.g. "*.mycrab.space"
+        self.on_new_record = on_new_record
         self._tasks: list[asyncio.Task] = []
         self._known_peers: dict[str, dict] = {}  # did -> {pubkey, pds_url}
         self._running = False
         self._new_member_event: asyncio.Event | None = None
+        self._backfilled: set = set()
 
     def _is_allowed(self, did: str, handle: str = "") -> bool:
         if self.membership == "open":
@@ -67,13 +70,40 @@ class FederationPeer:
         )
 
     def _store_record(self, author_did: str, rkey: str, plaintext: str, created_at: str, cid: str):
-        self.db.execute(
+        cur = self.db.execute(
             "INSERT OR IGNORE INTO federation_record"
             " (cid, author_did, rkey, club_id, plaintext, created_at, indexed_at)"
             " VALUES (?,?,?,?,?,?,?)",
             (cid, author_did, rkey, self.club_id, plaintext, created_at,
              time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         )
+        if cur.rowcount and self.on_new_record:
+            try:
+                pl = json.loads(plaintext)
+                text = pl.get("text", plaintext)
+                file_ref = pl.get("file", "")
+                file_name = pl.get("file_name", "")
+                mime = pl.get("mime", "")
+            except Exception:
+                text = plaintext
+                file_ref = file_name = mime = ""
+            member = self.db.execute(
+                "SELECT pds_url FROM federation_member WHERE did=? AND club_id=?",
+                (author_did, self.club_id)
+            ).fetchone()
+            pds_url = member[0] if member else ""
+            host = pds_url.replace("https://", "").replace("http://", "").split("/")[0] if pds_url else author_did
+            try:
+                ts = datetime.datetime.fromisoformat(created_at.replace("Z", ""))
+                ts_human = ts.strftime("%-d %b %Y, %H:%M")
+            except Exception:
+                ts_human = created_at
+            self.on_new_record(self.club_id, {
+                "cid": cid, "author_did": author_did, "handle": host,
+                "rkey": rkey, "text": text, "file_ref": file_ref,
+                "file_name": file_name, "mime": mime,
+                "ts_human": ts_human, "created_at": created_at,
+            })
 
     async def _handshake(self, session: aiohttp.ClientSession, peer_url: str):
         """Exchange identity + peer list with a remote node."""
@@ -112,7 +142,7 @@ class FederationPeer:
         ws_url = f"{ws_url}/xrpc/com.atproto.sync.subscribeRepos"
         while self._running:
             try:
-                async with session.ws_connect(ws_url, timeout=aiohttp.ClientTimeout(total=None)) as ws:
+                async with session.ws_connect(ws_url, timeout=aiohttp.ClientTimeout(total=None, sock_read=60)) as ws:
                     logger.info(f"[federation] subscribed to {pds_url}")
                     async for msg in ws:
                         if not self._running:
@@ -168,6 +198,13 @@ class FederationPeer:
         except Exception as e:
             logger.debug(f"[federation] fetch record error: {e}")
 
+    async def _safe_backfill(self, session: aiohttp.ClientSession, pds_url: str, peer_did: str):
+        try:
+            await self._backfill(session, pds_url, peer_did)
+        except Exception as e:
+            logger.warning(f"[federation] backfill failed {pds_url}: {e}")
+            self._backfilled.discard(peer_did)
+
     async def _backfill(self, session: aiohttp.ClientSession, pds_url: str, peer_did: str):
         """Fetch all existing club records from a peer via listRecords."""
         try:
@@ -209,7 +246,6 @@ class FederationPeer:
 
             # Subscribe to all known peers' firehoses + backfill existing records
             peer_tasks = {}
-            backfilled = set()
             while self._running:
                 # Re-handshake with seed first to get latest member list
                 await self._handshake(session, self.seed_url)
@@ -226,9 +262,9 @@ class FederationPeer:
                             self._subscribe_firehose(session, pds_url, peer_did)
                         )
                         peer_tasks[peer_did] = t
-                    if peer_did not in backfilled:
-                        backfilled.add(peer_did)
-                        asyncio.create_task(self._backfill(session, pds_url, peer_did))
+                    if peer_did not in self._backfilled:
+                        self._backfilled.add(peer_did)
+                        asyncio.create_task(self._safe_backfill(session, pds_url, peer_did))
 
                 # Wait up to 5 min, but wake immediately if a new member joins
                 try:
