@@ -394,10 +394,13 @@ async def identity_resolve_handle(request: web.Request):
 
 @routes.get("/xrpc/com.atproto.server.describeServer")
 async def server_describe_server(request: web.Request):
+	cfg = get_db(request).config
+	hostname = cfg["pds_pfx"].removeprefix("https://").removeprefix("http://").rstrip("/")
 	return web.json_response(
 		{
-			"did": get_db(request).config["pds_did"],
-			"availableUserDomains": [],
+			"did": cfg["pds_did"],
+			"availableUserDomains": [hostname],
+			"inviteCodeRequired": False,
 			"version": get_version_string(),  # off-spec
 		}
 	)
@@ -815,6 +818,8 @@ def construct_app(
 			app.router.add_route("*", prefix, handler)
 			app.router.add_route("*", f"{prefix}/{{rest:.*}}", handler)
 
+		if not getattr(plugin_mod, "DEFAULT_ENABLED", True):
+			ws_for_startup.seed_default_disabled(app_name)
 		if ws_for_startup.get_app_enabled(app_name):
 			plugin_manager.start(app_name)
 
