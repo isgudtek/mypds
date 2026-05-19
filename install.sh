@@ -18,10 +18,20 @@ echo "========================================"
 echo "  mypds 1-command install"
 echo "========================================"
 
+# ── 0. Detect OS ───────────────────────────────────────────────────
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.mypds}"
+IS_MAC=false
+[[ "$(uname)" == "Darwin" ]] && IS_MAC=true
+
 # ── 1. System deps ─────────────────────────────────────────────────
 echo ""
 echo "→ Installing system dependencies..."
-apt-get install -y python3-venv python3-pip git curl -qq 2>/dev/null || true
+if $IS_MAC; then
+    command -v python3 >/dev/null || brew install python3
+    command -v git >/dev/null || brew install git
+else
+    apt-get install -y python3-venv python3-pip git curl -qq 2>/dev/null || true
+fi
 
 # ── 2. mycrab tunnel setup (gets domain name + cloudflared config) ──
 echo ""
@@ -67,21 +77,21 @@ echo "  Port   : $FREE_PORT"
 # ── 4. Install mypds ────────────────────────────────────────────────
 echo ""
 echo "→ Installing mypds..."
-mkdir -p /opt/mypds
-python3 -m venv /opt/mypds/.venv
-/opt/mypds/.venv/bin/pip install --upgrade pip -q
-/opt/mypds/.venv/bin/pip install "git+https://github.com/isgudtek/mypds" -q
-echo "  mypds $(/opt/mypds/.venv/bin/mypds --version) installed"
+mkdir -p "$INSTALL_DIR"
+python3 -m venv "$INSTALL_DIR/.venv"
+"$INSTALL_DIR/.venv/bin/pip" install --upgrade pip -q
+"$INSTALL_DIR/.venv/bin/pip" install "git+https://github.com/isgudtek/mypds" -q
+echo "  mypds $("$INSTALL_DIR/.venv/bin/mypds" --version) installed"
 
 # ── 5. Setup: DID:PLC registration + account creation ───────────────
 echo ""
 echo "→ Running mypds setup (registers DID:PLC, creates account)..."
-cd /opt/mypds
+cd "$INSTALL_DIR"
 rm -rf data/   # wipe any leftover state from previous installs
-/opt/mypds/.venv/bin/mypds setup "$DOMAIN" --unsafe_password="$PASS"
+"$INSTALL_DIR/.venv/bin/mypds" setup "$DOMAIN" --unsafe_password="$PASS"
 
 # Read DID from DB
-DID=$(/opt/mypds/.venv/bin/python3 -c "
+DID=$("$INSTALL_DIR/.venv/bin/python3" -c "
 import apsw
 c = apsw.Connection('data/mypds.sqlite3')
 print(next(c.execute('SELECT pds_did FROM config'))[0])
@@ -90,7 +100,11 @@ print(next(c.execute('SELECT pds_did FROM config'))[0])
 # ── 6. Point tunnel at the correct port ─────────────────────────────
 echo ""
 echo "→ Configuring tunnel → port $FREE_PORT..."
-sed -i "s|localhost:[0-9]\+|localhost:$FREE_PORT|g" "$NEW_YML"
+if $IS_MAC; then
+    sed -i '' "s|localhost:[0-9]*|localhost:$FREE_PORT|g" "$NEW_YML"
+else
+    sed -i "s|localhost:[0-9]\+|localhost:$FREE_PORT|g" "$NEW_YML"
+fi
 
 # ── 7. Start tunnel ─────────────────────────────────────────────────
 echo "→ Starting cloudflare tunnel..."
@@ -101,7 +115,7 @@ sleep 3
 
 # ── 8. Start mypds ──────────────────────────────────────────────────
 echo "→ Starting mypds..."
-nohup /opt/mypds/.venv/bin/mypds run \
+nohup "$INSTALL_DIR/.venv/bin/mypds" run \
     --listen_host=127.0.0.1 --listen_port="$FREE_PORT" \
     >> /tmp/mypds.log 2>&1 &
 disown $!
@@ -135,5 +149,5 @@ echo "  PDS log  : /tmp/mypds.log"
 echo "  Tunnel   : /tmp/${NAME}-tunnel.log"
 echo ""
 echo "  ⚠  BACK UP YOUR ROTATION KEY (master identity):"
-echo "     /opt/mypds/data/${DOMAIN}_rotation_key.pem"
+echo "     $INSTALL_DIR/data/${DOMAIN}_rotation_key.pem"
 echo "========================================"
