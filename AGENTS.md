@@ -322,6 +322,75 @@ Open `$PDS_URL` in a browser:
 
 ---
 
+## Known Pitfalls — Fresh Install (Discovered in Live Testing)
+
+These issues were found during real agent-assisted installs. All are now fixed in the repo, but documented here so agents know what to verify.
+
+### 1. PyNaCl not in requirements (federation plugin fails silently)
+
+The `federation` plugin requires `PyNaCl` for NaCl encryption. It was missing from `pyproject.toml`.
+
+**Symptom:** Plugin runner starts but `federation` plugin fails with `No module named 'nacl'`. Federation tab missing from dashboard.
+
+**Fix (already applied to repo):** `PyNaCl` added to `pyproject.toml` dependencies. A fresh `pip install git+https://github.com/isgudtek/mypds` will include it automatically.
+
+**Verify after install:**
+```bash
+source /opt/mypds/.venv/bin/activate
+python3 -c "import nacl; print('PyNaCl OK')"
+```
+
+---
+
+### 2. Federation plugin disabled by default
+
+`federation/__init__.py` had `DEFAULT_ENABLED = False`, meaning the plugin never loaded even with PyNaCl present.
+
+**Symptom:** `mypds run` starts, no federation errors, but no `/club` routes and no federation activity.
+
+**Fix (already applied to repo):** Changed to `DEFAULT_ENABLED = True`. If you have an existing install with the old code, edit manually:
+```bash
+grep -r "DEFAULT_ENABLED" /opt/mypds/.venv/lib/*/site-packages/mypds/plugins/federation/__init__.py
+# Change False → True, then restart mypds
+```
+
+---
+
+### 3. Port mismatch → 502 errors
+
+mypds and the Cloudflare tunnel (or nginx) must use the **same port**. The mycrab `agent-setup-auto.sh` tunnel skill defaults to `localhost:8080`.
+
+**Rule:** Always use `--listen_port=8080` unless you change the tunnel config too. Do not mix ports.
+
+**Check:**
+```bash
+ss -tlnp | grep python   # mypds listen port
+grep "service:" ~/.cloudflared/*.yml   # tunnel target port
+# Both must be same number
+```
+
+---
+
+### 4. Install from wrong repo
+
+`pip install millipds` installs the **upstream David Buchanan fork** from PyPI — not this fork. Always install from GitHub:
+
+```bash
+# CORRECT
+pip install git+https://github.com/isgudtek/mypds
+
+# WRONG — wrong repo, missing plugins
+pip install millipds
+```
+
+---
+
+### 5. Do not use Docker
+
+This repo uses a plain Python venv + systemd. Docker is not part of the install path and adds complexity. If an agent tries to install Docker, stop it.
+
+---
+
 ## Troubleshooting
 
 ### Port already in use

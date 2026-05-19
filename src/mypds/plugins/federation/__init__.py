@@ -22,6 +22,7 @@ from . import crypto
 from .peer import FederationPeer, CLUB_NSID
 
 APP_NAME = "federation"
+DEFAULT_ENABLED = True
 NSID = CLUB_NSID
 URL_PREFIXES = ["/club", "/xrpc/space.mycrab.federation.join"]
 logger = logging.getLogger(__name__)
