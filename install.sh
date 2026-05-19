@@ -2,15 +2,16 @@
 # mypds 1-command install via mycrab.space tunnel
 #
 # Usage:
-#   TOKEN=xxx bash <(curl -s https://raw.githubusercontent.com/isgudtek/mypds/main/install.sh)
-#   TOKEN=xxx PASS=mypassword bash <(curl -s ...)
+#   bash <(curl -s https://raw.githubusercontent.com/isgudtek/mypds/main/install.sh)
+#   TOKEN=xxx bash <(curl -s ...)          # named subdomain (from mycrab.space)
+#   TOKEN=xxx PASS=mypass bash <(curl -s ...)
 #
-# TOKEN  — mycrab token (get one from mycrab.space)
+# TOKEN  — mycrab token for named subdomain (optional — free auto-name if omitted)
 # PASS   — PDS account password (random 16-char if omitted)
 
 set -euo pipefail
 
-: "${TOKEN:?TOKEN required — get one from mycrab.space}"
+TOKEN="${TOKEN:-}"
 PASS="${PASS:-$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c16)}"
 
 echo "========================================"
