@@ -358,11 +358,27 @@ grep -r "DEFAULT_ENABLED" /opt/mypds/.venv/lib/*/site-packages/mypds/plugins/fed
 
 ### 3. Port mismatch → 502 errors
 
-mypds and the Cloudflare tunnel (or nginx) must use the **same port**. The mycrab `agent-setup-auto.sh` tunnel skill defaults to `localhost:8080`.
+mypds and the Cloudflare tunnel (or nginx) must use the **same port**. The mycrab `agent-setup-auto.sh` tunnel skill defaults to `localhost:8080`, but 8080 may already be in use.
 
-**Rule:** Always use `--listen_port=8080` unless you change the tunnel config too. Do not mix ports.
+**Rule:** Find a free port first, then use it consistently for both mypds and the tunnel config.
 
-**Check:**
+**Find free port:**
+```bash
+FREE_PORT=$(python3 -c "
+import socket
+for p in [8080, 8081, 8082, 8088, 8090, 9000, 9090]:
+    try:
+        s = socket.socket(); s.bind(('', p)); s.close(); print(p); break
+    except OSError: pass
+")
+echo "Using port: $FREE_PORT"
+```
+
+Then use `$FREE_PORT` for both:
+- `mypds run --listen_port=$FREE_PORT`
+- tunnel ingress: `service: http://127.0.0.1:$FREE_PORT`
+
+**Verify:**
 ```bash
 ss -tlnp | grep python   # mypds listen port
 grep "service:" ~/.cloudflared/*.yml   # tunnel target port
