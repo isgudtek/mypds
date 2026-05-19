@@ -1,108 +1,135 @@
 #!/bin/bash
-# mypds 1-command install
-# Usage: NAME=gallo PORT=3032 PASS=gallo2026 TOKEN=xxx bash install.sh
-# TOKEN: from api.mycrab.space/reserve-domain
+# mypds 1-command install via mycrab.space tunnel
+#
+# Usage:
+#   TOKEN=xxx bash <(curl -s https://raw.githubusercontent.com/isgudtek/mypds/main/install.sh)
+#   TOKEN=xxx PASS=mypassword bash <(curl -s ...)
+#
+# TOKEN  — mycrab token (get one from mycrab.space)
+# PASS   — PDS account password (random 16-char if omitted)
 
-set -e
+set -euo pipefail
 
-: "${NAME:?NAME required}"
-: "${PORT:?PORT required}"
-: "${PASS:?PASS required}"
-# TOKEN only needed if cloudflared tunnel not already configured
+: "${TOKEN:?TOKEN required — get one from mycrab.space}"
+PASS="${PASS:-$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c16)}"
 
-INSTALL=/opt/$NAME
-VENV=/opt/$NAME-venv
-KEYS=/opt/$NAME-keys
-LOG=/tmp/$NAME.log
+echo "========================================"
+echo "  mypds 1-command install"
+echo "========================================"
 
-echo "=== 1. Clone + install ==="
-git clone https://github.com/isgudtek/mypds $INSTALL
-python3 -m venv $VENV
-$VENV/bin/pip install -e $INSTALL pynacl cbrrr PyJWT -q
+# ── 1. System deps ─────────────────────────────────────────────────
+echo ""
+echo "→ Installing system dependencies..."
+apt-get install -y python3-venv python3-pip git curl -qq 2>/dev/null || true
 
-echo "=== 2. Init database ==="
-cd $INSTALL
-$VENV/bin/python3 -m mypds init $NAME.mycrab.space
+# ── 2. mycrab tunnel setup (gets domain name + cloudflared config) ──
+echo ""
+echo "→ Setting up mycrab tunnel..."
 
-echo "=== 3. Keys ==="
-mkdir -p $KEYS
-$VENV/bin/python3 -m mypds util keygen > $KEYS/rotation_key.pem
-$VENV/bin/python3 -m mypds util keygen > $KEYS/repo_key.pem
+# Snapshot existing yml files so we can find the new one
+BEFORE_YMLS=$(ls ~/.cloudflared/*.yml 2>/dev/null | sort || true)
 
-echo "=== 4. DID:PLC ==="
-REPO_PUB=$($VENV/bin/python3 -m mypds util print_pubkey $KEYS/repo_key.pem)
-DID=$($VENV/bin/python3 -m mypds util plcgen \
-  --genesis_json=$KEYS/plc_genesis.json \
-  --rotation_key=$KEYS/rotation_key.pem \
-  --handle=$NAME.mycrab.space \
-  --pds_host=https://$NAME.mycrab.space \
-  --repo_pubkey=$REPO_PUB)
-echo $DID > $KEYS/did.txt
-curl -sf -X POST https://plc.directory/$DID \
-  -H 'Content-Type: application/json' \
-  -d @$KEYS/plc_genesis.json
-echo "DID: $DID"
+curl -fsSL https://mycrab.space/agent-setup-auto.sh | MODE=bot bash -s "$TOKEN"
+pkill -f 'http.server' 2>/dev/null || true   # cleanup temp server from setup
 
-echo "=== 5. Create account ==="
-$VENV/bin/python3 -m mypds account create $DID $NAME.mycrab.space \
-  --unsafe_password=$PASS \
-  --signing_key=$KEYS/repo_key.pem
+# Find the newly created yml
+AFTER_YMLS=$(ls ~/.cloudflared/*.yml 2>/dev/null | sort || true)
+NEW_YML=$(comm -13 <(echo "$BEFORE_YMLS") <(echo "$AFTER_YMLS") | head -1)
 
-echo "=== 6. Federation + local URL settings ==="
-$VENV/bin/python3 - <<PYEOF
-import apsw
-db = apsw.Connection('$INSTALL/data/web.sqlite3')
-db.execute('''CREATE TABLE IF NOT EXISTS node_settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL DEFAULT ""
-)''')
-db.execute('''CREATE TABLE IF NOT EXISTS app_settings (
-    app_name TEXT PRIMARY KEY,
-    enabled INTEGER NOT NULL DEFAULT 0
-)''')
-for k, v in [
-    ('plugin_federation_club_id',         'mycrab'),
-    ('plugin_federation_seed_url',        'https://mypds.mycrab.space'),
-    ('plugin_federation_membership',      'open'),
-    ('plugin_federation_whitelist_pattern','*.mycrab.space'),
-    ('pds_local_url',                     'http://127.0.0.1:$PORT'),
-]:
-    db.execute('INSERT OR REPLACE INTO node_settings (key,value) VALUES (?,?)', (k, v))
-db.execute('INSERT OR REPLACE INTO app_settings (app_name,enabled) VALUES (?,1)', ('federation',))
-print('settings done')
-PYEOF
-
-echo "=== 7. Cloudflare tunnel ==="
-if [ -f ~/.cloudflared/$NAME.yml ]; then
-    echo "  Tunnel config exists — reusing"
-else
-    : "${TOKEN:?TOKEN required for first-time tunnel setup}"
-    curl -s https://mycrab.space/agent-setup-auto.sh | MODE=bot bash -s $TOKEN
-    pkill -f 'http.server' 2>/dev/null || true
+if [ -z "$NEW_YML" ]; then
+    # Fallback: most recently modified yml
+    NEW_YML=$(ls -t ~/.cloudflared/*.yml 2>/dev/null | head -1)
 fi
-sed -i "s|localhost:[0-9]*|localhost:$PORT|" ~/.cloudflared/$NAME.yml
-pkill -f "cloudflared.*$NAME" 2>/dev/null || true
-sleep 1
-nohup cloudflared tunnel --protocol http2 --config ~/.cloudflared/$NAME.yml run $NAME \
-  > /tmp/$NAME-tunnel.log 2>&1 &
+if [ -z "$NEW_YML" ]; then
+    echo "ERROR: mycrab tunnel setup failed — no config created. Check TOKEN is valid."
+    exit 1
+fi
 
-echo "=== 8. Start PDS ==="
-nohup $VENV/bin/python3 -m mypds run --listen_host=127.0.0.1 --listen_port=$PORT \
-  >> $LOG 2>&1 &
-sleep 8
+NAME=$(grep "^tunnel:" "$NEW_YML" | awk '{print $2}')
+DOMAIN="${NAME}.mycrab.space"
+echo "  Domain : $DOMAIN"
+echo "  Config : $NEW_YML"
 
-echo "=== 9. Verify ==="
-curl -sf https://$NAME.mycrab.space/xrpc/_health && echo " health OK"
-curl -sf https://$NAME.mycrab.space/.well-known/atproto-did && echo " DID OK"
-curl -sf -X POST https://$NAME.mycrab.space/xrpc/com.atproto.server.createSession \
-  -H "Content-Type: application/json" \
-  -d "{\"identifier\":\"$NAME.mycrab.space\",\"password\":\"$PASS\"}" \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print(' login OK:', d.get('did','FAIL'))"
+# ── 3. Find a free port ─────────────────────────────────────────────
+FREE_PORT=$(python3 -c "
+import socket
+for p in [8080, 8081, 8082, 8088, 9000, 9090]:
+    try:
+        s = socket.socket()
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(('', p)); s.close(); print(p); break
+    except OSError:
+        pass
+")
+echo "  Port   : $FREE_PORT"
+
+# ── 4. Install mypds ────────────────────────────────────────────────
+echo ""
+echo "→ Installing mypds..."
+mkdir -p /opt/mypds
+python3 -m venv /opt/mypds/.venv
+/opt/mypds/.venv/bin/pip install --upgrade pip -q
+/opt/mypds/.venv/bin/pip install "git+https://github.com/isgudtek/mypds" -q
+echo "  mypds $(/opt/mypds/.venv/bin/mypds --version) installed"
+
+# ── 5. Setup: DID:PLC registration + account creation ───────────────
+echo ""
+echo "→ Running mypds setup (registers DID:PLC, creates account)..."
+cd /opt/mypds
+/opt/mypds/.venv/bin/mypds setup "$DOMAIN" --unsafe_password="$PASS"
+
+# Read DID from DB
+DID=$(/opt/mypds/.venv/bin/python3 -c "
+import apsw
+c = apsw.Connection('data/mypds.sqlite3')
+print(next(c.execute('SELECT pds_did FROM config'))[0])
+" 2>/dev/null || echo "unknown")
+
+# ── 6. Point tunnel at the correct port ─────────────────────────────
+echo ""
+echo "→ Configuring tunnel → port $FREE_PORT..."
+sed -i "s|localhost:[0-9]\+|localhost:$FREE_PORT|g" "$NEW_YML"
+
+# ── 7. Start tunnel ─────────────────────────────────────────────────
+echo "→ Starting cloudflare tunnel..."
+nohup cloudflared tunnel --protocol http2 --config "$NEW_YML" run "$NAME" \
+    > /tmp/${NAME}-tunnel.log 2>&1 &
+sleep 3
+
+# ── 8. Start mypds ──────────────────────────────────────────────────
+echo "→ Starting mypds..."
+nohup /opt/mypds/.venv/bin/mypds run \
+    --listen_host=127.0.0.1 --listen_port="$FREE_PORT" \
+    >> /tmp/mypds.log 2>&1 &
+echo "  Waiting for plugins to load (~10s)..."
+sleep 10
+
+# ── 9. Verify ───────────────────────────────────────────────────────
+echo ""
+echo "→ Verifying..."
+HEALTH=$(curl -sf "https://$DOMAIN/xrpc/_health" && echo "OK" || echo "FAIL")
+DID_CHECK=$(curl -sf "https://$DOMAIN/.well-known/atproto-did" && echo "OK" || echo "FAIL")
+LOGIN=$(curl -sf -X POST "https://$DOMAIN/xrpc/com.atproto.server.createSession" \
+    -H "Content-Type: application/json" \
+    -d "{\"identifier\":\"$DOMAIN\",\"password\":\"$PASS\"}" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK:', d.get('did','FAIL'))" \
+    2>/dev/null || echo "FAIL")
+
+echo "  Health : $HEALTH"
+echo "  DID    : $DID_CHECK"
+echo "  Login  : $LOGIN"
 
 echo ""
-echo "=== DONE ==="
-echo "  URL:      https://$NAME.mycrab.space"
-echo "  Handle:   $NAME.mycrab.space"
-echo "  Password: $PASS"
-echo "  DID:      $DID"
-echo "  Log:      $LOG"
+echo "========================================"
+echo "  DONE"
+echo "========================================"
+echo "  URL      : https://$DOMAIN"
+echo "  Handle   : $DOMAIN"
+echo "  Password : $PASS"
+echo "  DID      : $DID"
+echo "  PDS log  : /tmp/mypds.log"
+echo "  Tunnel   : /tmp/${NAME}-tunnel.log"
+echo ""
+echo "  ⚠  BACK UP YOUR ROTATION KEY (master identity):"
+echo "     /opt/mypds/data/${DOMAIN}_rotation_key.pem"
+echo "========================================"
