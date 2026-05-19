@@ -45,7 +45,7 @@ if [ -z "$NEW_YML" ]; then
     exit 1
 fi
 
-NAME=$(grep "^tunnel:" "$NEW_YML" | awk '{print $2}')
+NAME=$(basename "$NEW_YML" .yml)
 DOMAIN="${NAME}.mycrab.space"
 echo "  Domain : $DOMAIN"
 echo "  Config : $NEW_YML"
@@ -76,6 +76,7 @@ echo "  mypds $(/opt/mypds/.venv/bin/mypds --version) installed"
 echo ""
 echo "→ Running mypds setup (registers DID:PLC, creates account)..."
 cd /opt/mypds
+rm -rf data/   # wipe any leftover state from previous installs
 /opt/mypds/.venv/bin/mypds setup "$DOMAIN" --unsafe_password="$PASS"
 
 # Read DID from DB
