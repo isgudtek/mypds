@@ -146,6 +146,21 @@ class Database:
 		}
 		if "birthdate" not in existing_user_cols:
 			self.con.execute("ALTER TABLE user ADD COLUMN birthdate TEXT")
+		existing_tables = {
+			row[0] for row in self.con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+		}
+		if "migration_preflight" not in existing_tables:
+			self.con.execute("""
+				CREATE TABLE migration_preflight(
+					token TEXT PRIMARY KEY,
+					did TEXT NOT NULL,
+					handle TEXT NOT NULL,
+					bsky_token TEXT NOT NULL,
+					verify_code TEXT NOT NULL,
+					ts REAL NOT NULL,
+					imported INTEGER NOT NULL DEFAULT 0
+				) STRICT
+			""")
 
 	def _init_tables(self):
 		logger.info("initing tables")

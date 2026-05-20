@@ -72,16 +72,7 @@ SETTINGS = [
 
 routes = web.RouteTableDef()
 
-# In-memory preflight sessions: token → {bsky_token, did, handle, ts}
-_preflight: dict = {}
-_PREFLIGHT_TTL = 1800  # 30 min
-
-
-def _clean_preflight():
-    now = time.time()
-    stale = [k for k, v in _preflight.items() if now - v["ts"] > _PREFLIGHT_TTL]
-    for k in stale:
-        del _preflight[k]
+_PREFLIGHT_TTL = 1800  # 30 min — sessions survive plugin restarts (stored in DB)
 
 
 def _bsky_post(path: str, payload: dict, token: str = "") -> dict:
@@ -237,28 +228,20 @@ async def migrate_preflight(request: web.Request):
     # Format: mypds-XXXXXX  (8 random uppercase chars)
     verify_code = "mypds-" + secrets.token_hex(4).upper()
 
-    # Store preflight session
-    _clean_preflight()
     token = secrets.token_urlsafe(24)
-    _preflight[token] = {
-        "bsky_token": bsky_token,
-        "did": did,
-        "handle": handle,
-        "verify_code": verify_code,
-        "ts": time.time(),
-    }
+    db.save_preflight(token, did, handle, bsky_token, verify_code, time.time())
+    db.clean_preflight(_PREFLIGHT_TTL)
 
     return web.json_response({"token": token, "did": did, "handle": handle, "verify_code": verify_code})
 
 
 def _verify_ownership_post(did: str, verify_code: str, bsky_token: str) -> bool:
-    """Check that the user posted a mypds- code on their bsky feed.
-    Accepts the session code OR any prior mypds- code — bsky password auth already proved ownership."""
+    """Check that the user posted verify_code on their bsky feed (proves account ownership)."""
     try:
         feed = _bsky_get("app.bsky.feed.getAuthorFeed", {"actor": did, "limit": 20}, token=bsky_token)
         for item in feed.get("feed", []):
             text = item.get("post", {}).get("record", {}).get("text", "")
-            if verify_code in text or "mypds-" in text:
+            if verify_code in text:
                 return True
     except Exception as e:
         logger.warning(f"[migration] feed check failed: {e}")
@@ -280,11 +263,11 @@ async def migrate_complete(request: web.Request):
     if not session_token or not new_password:
         raise web.HTTPBadRequest(text="session_token and password required")
 
-    pf = _preflight.get(session_token)
+    pf = db.get_preflight(session_token)
     if not pf:
         raise web.HTTPBadRequest(text="Preflight session expired or invalid. Start again.")
     if time.time() - pf["ts"] > _PREFLIGHT_TTL:
-        del _preflight[session_token]
+        db.delete_preflight(session_token)
         raise web.HTTPBadRequest(text="Preflight session expired. Start again.")
 
     bsky_token = pf["bsky_token"]
@@ -325,8 +308,7 @@ async def migrate_complete(request: web.Request):
         logger.warning(f"[migration] CAR import partial failure: {e} — history may be incomplete")
 
     # 6. Keep session alive for Step 3 (PLC update), reset TTL
-    pf["ts"] = time.time()
-    pf["imported"] = True
+    db.update_preflight(session_token, imported=True, ts=time.time())
 
     return web.json_response({
         "did": did,
@@ -342,7 +324,7 @@ async def migrate_request_plc_email(request: web.Request):
     """Step 3a: ask bsky.social to email the user a PLC signing token."""
     body = await request.json()
     session_token = body.get("session_token", "")
-    pf = _preflight.get(session_token)
+    pf = db.get_preflight(session_token)
     if not pf or not pf.get("imported"):
         raise web.HTTPBadRequest(text="Session invalid or account not yet imported.")
     try:
@@ -365,7 +347,7 @@ async def migrate_finalize_plc(request: web.Request):
     body = await request.json()
     session_token = body.get("session_token", "")
     email_token = body.get("token", "").strip()
-    pf = _preflight.get(session_token)
+    pf = db.get_preflight(session_token)
     if not pf or not pf.get("imported"):
         raise web.HTTPBadRequest(text="Session invalid or account not yet imported.")
     if not email_token:
@@ -392,7 +374,7 @@ async def migrate_finalize_plc(request: web.Request):
     await asyncio.to_thread(_submit_plc_op, signed["operation"], did, plc_host)
     logger.info(f"[migration] PLC updated for {did} → {pds_pfx}")
 
-    _preflight.pop(session_token, None)
+    db.delete_preflight(session_token)
     return web.json_response({"ok": True, "did": did, "pds": pds_pfx})
 
 

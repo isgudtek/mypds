@@ -62,6 +62,36 @@ class PluginDatabase:
     def new_con(self):
         return self.con
 
+    def save_preflight(self, token: str, did: str, handle: str, bsky_token: str, verify_code: str, ts: float) -> None:
+        with self.con:
+            self.con.execute(
+                "INSERT OR REPLACE INTO migration_preflight(token,did,handle,bsky_token,verify_code,ts,imported) VALUES(?,?,?,?,?,?,0)",
+                (token, did, handle, bsky_token, verify_code, ts),
+            )
+
+    def get_preflight(self, token: str) -> Optional[dict]:
+        row = self.con.execute(
+            "SELECT did,handle,bsky_token,verify_code,ts,imported FROM migration_preflight WHERE token=?", (token,)
+        ).fetchone()
+        if not row:
+            return None
+        return {"did": row[0], "handle": row[1], "bsky_token": row[2], "verify_code": row[3], "ts": row[4], "imported": bool(row[5])}
+
+    def update_preflight(self, token: str, imported: bool, ts: float) -> None:
+        with self.con:
+            self.con.execute(
+                "UPDATE migration_preflight SET imported=?, ts=? WHERE token=?",
+                (1 if imported else 0, ts, token),
+            )
+
+    def delete_preflight(self, token: str) -> None:
+        with self.con:
+            self.con.execute("DELETE FROM migration_preflight WHERE token=?", (token,))
+
+    def clean_preflight(self, ttl: float) -> None:
+        with self.con:
+            self.con.execute("DELETE FROM migration_preflight WHERE ts < ?", (time.time() - ttl,))
+
     def handle_by_did(self, did: str) -> Optional[str]:
         row = self.con.execute(
             "SELECT handle FROM user WHERE did=?", (did,)
