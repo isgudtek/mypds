@@ -3,10 +3,11 @@ mypds migration plugin — import an existing Bluesky account onto this PDS.
 
 Flow:
   1. User enters bsky handle + password → we auth with bsky.social,
-     request a PLC operation signature email.
-  2. User enters email token → we fetch the co-signed plcOp from bsky,
-     download the repo CAR, create the local account, import all records,
-     then submit the plcOp to plc.directory (making this PDS authoritative).
+     generate a short verification code.
+  2. User posts the code as a Bluesky post, then clicks "I posted it".
+     We verify the code appears in their feed, then download the repo CAR,
+     create the local account, and import all records.
+     (PLC op / DID update is a separate optional step handled later.)
 
 Also exposes:
   POST /xrpc/com.atproto.server.createAccount  — new (non-migration) accounts
@@ -207,7 +208,7 @@ async def migrate_index(request: web.Request):
 
 @routes.post("/migrate/preflight")
 async def migrate_preflight(request: web.Request):
-    """Step 1: auth with bsky, request PLC sig email."""
+    """Step 1: auth with bsky, generate a post-verification code."""
     ws = get_web_store(request)
     if ws.get_plugin_setting(APP_NAME, "migration_enabled", "true") != "true":
         raise web.HTTPForbidden(text="Migration is disabled on this PDS.")
@@ -228,20 +229,40 @@ async def migrate_preflight(request: web.Request):
     did = sess["did"]
     handle = sess.get("handle", bsky_handle)
 
-    # Request PLC signature email from bsky
-    _bsky_post("com.atproto.identity.requestPlcOperationSignature", {}, token=bsky_token)
+    # Generate a short unique code the user will post on bsky to prove ownership.
+    # Format: mypds-XXXXXX  (8 random uppercase chars)
+    verify_code = "mypds-" + secrets.token_hex(4).upper()
 
     # Store preflight session
     _clean_preflight()
     token = secrets.token_urlsafe(24)
-    _preflight[token] = {"bsky_token": bsky_token, "did": did, "handle": handle, "ts": time.time()}
+    _preflight[token] = {
+        "bsky_token": bsky_token,
+        "did": did,
+        "handle": handle,
+        "verify_code": verify_code,
+        "ts": time.time(),
+    }
 
-    return web.json_response({"token": token, "did": did, "handle": handle})
+    return web.json_response({"token": token, "did": did, "handle": handle, "verify_code": verify_code})
+
+
+def _verify_ownership_post(did: str, verify_code: str, bsky_token: str) -> bool:
+    """Check that the user posted verify_code on their bsky feed (proves account ownership)."""
+    try:
+        feed = _bsky_get("app.bsky.feed.getAuthorFeed", {"actor": did, "limit": 20}, token=bsky_token)
+        for item in feed.get("feed", []):
+            text = item.get("post", {}).get("record", {}).get("text", "")
+            if verify_code in text:
+                return True
+    except Exception as e:
+        logger.warning(f"[migration] feed check failed: {e}")
+    return False
 
 
 @routes.post("/migrate/complete")
 async def migrate_complete(request: web.Request):
-    """Step 2: email token → fetch plcOp, import repo, create account, go live."""
+    """Step 2: verify ownership post → import repo → create account."""
     db = get_db(request)
     ws = get_web_store(request)
     if ws.get_plugin_setting(APP_NAME, "migration_enabled", "true") != "true":
@@ -249,11 +270,10 @@ async def migrate_complete(request: web.Request):
 
     body = await request.json()
     session_token = body.get("session_token", "")
-    email_token = body.get("email_token", "").strip()
     new_password = body.get("password", "")
 
-    if not session_token or not email_token or not new_password:
-        raise web.HTTPBadRequest(text="session_token, email_token and password required")
+    if not session_token or not new_password:
+        raise web.HTTPBadRequest(text="session_token and password required")
 
     pf = _preflight.get(session_token)
     if not pf:
@@ -265,70 +285,47 @@ async def migrate_complete(request: web.Request):
     bsky_token = pf["bsky_token"]
     did = pf["did"]
     handle = pf["handle"]
+    verify_code = pf["verify_code"]
     pds_pfx = db.config.get("pds_pfx", "")
-    plc_host = db.config.get("plc_host", "https://plc.directory")
 
     # Check account doesn't already exist locally
     if db.handle_by_did(did):
         raise web.HTTPConflict(text="This DID is already hosted on this PDS.")
 
-    # 1. Get recommended DID credentials from bsky (current rotation keys etc.)
-    creds = _bsky_get("com.atproto.identity.getRecommendedDidCredentials", {}, token=bsky_token)
+    # 1. Verify ownership: look for the code in their bsky feed
+    if not _verify_ownership_post(did, verify_code, bsky_token):
+        raise web.HTTPBadRequest(
+            text=f"Verification post not found. Make sure you posted '{verify_code}' on your Bluesky account and try again."
+        )
+    logger.info(f"[migration] ownership verified for {did} via post")
 
-    # 2. Generate new repo signing key for this PDS
+    # 2. Generate a signing key for this PDS
     repo_privkey = crypto.keygen_p256()
-    repo_pubkey_did = crypto.encode_pubkey_as_did_key(repo_privkey.public_key())
 
-    # 3. Build new PLC operation pointing at this PDS
-    new_plc_op = {
-        "type": "plc_operation",
-        "rotationKeys": creds.get("rotationKeys", []),
-        "verificationMethods": {"atproto": repo_pubkey_did},
-        "alsoKnownAs": creds.get("alsoKnownAs", [f"at://{handle}"]),
-        "services": {
-            "atproto_pds": {
-                "type": "AtprotoPersonalDataServer",
-                "endpoint": pds_pfx,
-            }
-        },
-        "prev": None,  # bsky will fill this in when co-signing
-    }
-
-    # 4. Get bsky to co-sign the PLC op with email token
-    signed_op_resp = _bsky_post("com.atproto.identity.signPlcOperation", {
-        "token": email_token,
-        "plcOp": new_plc_op,
-    }, token=bsky_token)
-    signed_plc_op = signed_op_resp.get("operation") or signed_op_resp
-
-    # 5. Download full repo CAR from bsky
+    # 3. Download full repo CAR from bsky
     logger.info(f"[migration] fetching repo CAR for {did}")
     car_bytes = _fetch_repo_car(did, bsky_token)
     logger.info(f"[migration] CAR size: {len(car_bytes)} bytes")
 
-    # 6. Create the account locally (empty repo initially)
+    # 4. Create the account locally
     db.create_account(did=did, handle=handle, password=new_password, privkey=repo_privkey)
     logger.info(f"[migration] account created locally for {did}")
 
-    # 7. Import all records from the CAR
+    # 5. Import all records from the CAR
     try:
         _import_car(db, did, car_bytes, repo_privkey)
         logger.info(f"[migration] CAR imported for {did}")
     except Exception as e:
-        logger.warning(f"[migration] CAR import partial failure: {e} — account live but history may be incomplete")
+        logger.warning(f"[migration] CAR import partial failure: {e} — history may be incomplete")
 
-    # 8. Submit signed PLC op to plc.directory (makes this PDS authoritative)
-    _submit_plc_op(signed_plc_op, did, plc_host)
-    logger.info(f"[migration] plcOp submitted for {did} — now live on {pds_pfx}")
-
-    # 9. Clean up preflight
+    # 6. Clean up
     _preflight.pop(session_token, None)
 
     return web.json_response({
         "did": did,
         "handle": handle,
         "pds": pds_pfx,
-        "message": f"Account {handle} is now live on {pds_pfx}",
+        "message": f"Account {handle} imported. Your posts live here now.",
     })
 
 

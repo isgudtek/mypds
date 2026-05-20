@@ -28,9 +28,17 @@
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .hint { font-size: .72rem; color: var(--muted); margin-top: 6px; line-height: 1.5; }
   .err { color: var(--red); font-size: .8rem; margin-top: 10px; display: none; }
-  .ok { color: var(--green); font-size: .8rem; margin-top: 10px; display: none; }
   .pill { display: inline-block; font-size: .68rem; font-family: var(--mono); background: var(--border);
           border-radius: 4px; padding: 2px 7px; color: var(--muted); margin-bottom: 10px; }
+  .code-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+              padding: 14px 16px; margin: 14px 0; font-family: var(--mono); font-size: 1.1rem;
+              letter-spacing: .12em; text-align: center; color: var(--text);
+              display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .copy-btn { font-size: .7rem; background: var(--border); border: none; color: var(--muted);
+              border-radius: 4px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
+  .copy-btn:hover { color: var(--text); }
+  .steps-hint { font-size: .78rem; color: var(--muted); line-height: 1.7; margin: 12px 0; }
+  .steps-hint b { color: var(--text); }
   .success-box { text-align: center; padding: 20px 0; }
   .success-box .icon { font-size: 2.5rem; margin-bottom: 12px; }
   .success-box h2 { font-size: 1.1rem; margin-bottom: 8px; }
@@ -50,33 +58,43 @@
     <input id="bsky_handle" type="text" placeholder="you.bsky.social" autocomplete="username">
     <label>Bluesky password (or app password)</label>
     <input id="bsky_pass" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password">
-    <p class="hint">We'll send a verification code to your Bluesky email address. Your password is never stored.</p>
+    <p class="hint">We'll verify you own this account. Your password is never stored.</p>
     <div class="err" id="err1"></div>
-    <button class="btn" id="btn1" onclick="step1()">Send verification code</button>
+    <button class="btn" id="btn1" onclick="step1()">Continue</button>
   </div>
 
-  <!-- Step 2: Email token + new password -->
+  <!-- Step 2: Post the code + set password -->
   <div class="step" id="step2">
-    <div class="pill">Step 2 of 2 — confirm &amp; set password</div>
-    <label>Verification code (from your email)</label>
-    <input id="email_token" type="text" placeholder="XXXXXX" autocomplete="one-time-code" style="letter-spacing:.15em; font-family:var(--mono);">
-    <label>New password for this PDS</label>
+    <div class="pill">Step 2 of 2 — prove ownership &amp; set password</div>
+
+    <div class="steps-hint">
+      <b>1.</b> Open Bluesky and post this exact code:<br>
+      <b>2.</b> Come back here and click "I Posted It"
+    </div>
+
+    <div class="code-box">
+      <span id="verify_code_display"></span>
+      <button class="copy-btn" onclick="copyCode()">Copy</button>
+    </div>
+
+    <label style="margin-top:18px;">New password for this PDS</label>
     <input id="new_pass" type="password" placeholder="choose a strong password" autocomplete="new-password">
     <label>Confirm password</label>
     <input id="new_pass2" type="password" placeholder="repeat password" autocomplete="new-password">
-    <p class="hint">Your Bluesky posts will be imported. This takes up to a minute for large accounts.</p>
+
+    <p class="hint">Once verified, your Bluesky posts will be imported. Large accounts may take up to a minute.</p>
     <div class="err" id="err2"></div>
-    <button class="btn" id="btn2" onclick="step2()">Migrate account</button>
-    <div class="progress" id="progress">Importing your posts… hang tight ⏳</div>
+    <button class="btn" id="btn2" onclick="step2()">I Posted It — Migrate Account</button>
+    <div class="progress" id="progress">Importing your posts… hang tight</div>
   </div>
 
   <!-- Done -->
   <div class="step" id="step3">
     <div class="success-box">
-      <div class="icon">✓</div>
+      <div class="icon">&#10003;</div>
       <h2 id="done_handle"></h2>
-      <p>Your account is live on <strong id="done_pds"></strong>.<br>
-         Open the Bluesky app — everything looks the same, but you're self-hosted now.</p>
+      <p>Your account data is now on <strong id="done_pds"></strong>.<br>
+         Log in with your new password. You can delete the verification post from Bluesky now.</p>
     </div>
   </div>
 
@@ -88,6 +106,7 @@
 <script>
 const MIGRATION_ENABLED = {{MIGRATION_ENABLED}};
 let _session_token = "";
+let _verify_code = "";
 
 if (!MIGRATION_ENABLED) {
   document.getElementById("step1").style.display = "none";
@@ -105,13 +124,20 @@ function err(id, msg) {
   el.style.display = msg ? "block" : "none";
 }
 
+function copyCode() {
+  navigator.clipboard.writeText(_verify_code).catch(() => {});
+  const btn = document.querySelector(".copy-btn");
+  btn.textContent = "Copied!";
+  setTimeout(() => btn.textContent = "Copy", 1500);
+}
+
 async function step1() {
   const handle = document.getElementById("bsky_handle").value.trim().replace(/^@/, "");
   const pass   = document.getElementById("bsky_pass").value;
   if (!handle || !pass) { err("err1", "Enter your Bluesky handle and password."); return; }
 
   const btn = document.getElementById("btn1");
-  btn.disabled = true; btn.textContent = "Sending…";
+  btn.disabled = true; btn.textContent = "Verifying…";
   err("err1", "");
 
   try {
@@ -123,26 +149,26 @@ async function step1() {
     const d = await r.json();
     if (!r.ok) { err("err1", d.text || d.message || "Error. Check handle and password."); return; }
     _session_token = d.token;
+    _verify_code = d.verify_code;
+    document.getElementById("verify_code_display").textContent = d.verify_code;
     show("step2");
-    document.getElementById("email_token").focus();
+    document.getElementById("new_pass").focus();
   } catch(e) {
     err("err1", "Network error — try again.");
   } finally {
-    btn.disabled = false; btn.textContent = "Send verification code";
+    btn.disabled = false; btn.textContent = "Continue";
   }
 }
 
 async function step2() {
-  const token  = document.getElementById("email_token").value.trim();
-  const pass   = document.getElementById("new_pass").value;
-  const pass2  = document.getElementById("new_pass2").value;
-  if (!token)        { err("err2", "Enter the verification code from your email."); return; }
+  const pass  = document.getElementById("new_pass").value;
+  const pass2 = document.getElementById("new_pass2").value;
   if (pass.length < 8) { err("err2", "Password must be at least 8 characters."); return; }
-  if (pass !== pass2) { err("err2", "Passwords do not match."); return; }
+  if (pass !== pass2)  { err("err2", "Passwords do not match."); return; }
 
-  const btn = document.getElementById("btn2");
+  const btn  = document.getElementById("btn2");
   const prog = document.getElementById("progress");
-  btn.disabled = true; btn.textContent = "Migrating…";
+  btn.disabled = true; btn.textContent = "Checking post…";
   prog.style.display = "block";
   err("err2", "");
 
@@ -150,22 +176,21 @@ async function step2() {
     const r = await fetch("/migrate/complete", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({session_token: _session_token, email_token: token, password: pass})
+      body: JSON.stringify({session_token: _session_token, password: pass})
     });
     const d = await r.json();
-    if (!r.ok) { err("err2", d.text || d.message || "Migration failed. Check your code and try again."); return; }
+    if (!r.ok) { err("err2", d.text || d.message || "Migration failed. Did you post the code?"); return; }
     document.getElementById("done_handle").textContent = "@" + d.handle;
     document.getElementById("done_pds").textContent = d.pds;
     show("step3");
   } catch(e) {
     err("err2", "Network error — try again.");
   } finally {
-    btn.disabled = false; btn.textContent = "Migrate account";
+    btn.disabled = false; btn.textContent = "I Posted It — Migrate Account";
     prog.style.display = "none";
   }
 }
 
-// Allow Enter key to advance
 document.addEventListener("keydown", e => {
   if (e.key !== "Enter") return;
   if (document.getElementById("step1").classList.contains("active")) step1();
