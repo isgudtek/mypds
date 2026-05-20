@@ -12,16 +12,20 @@ import sys
 import time
 import logging
 import asyncio
+import secrets
 import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Tuple
 
 import apsw
+import cbrrr
 import aiohttp
 from aiohttp import web
+from atmst.mst.node import MSTNode
 from jinja2 import Environment, FileSystemLoader, ChoiceLoader, PrefixLoader
+from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 
-from . import static_config
+from . import static_config, crypto, util
 from .app_util import (
     MILLIPDS_DB, MILLIPDS_AIOHTTP_CLIENT, MILLIPDS_JINJA_ENV,
     MILLIPDS_FIREHOSE_QUEUES, MILLIPDS_FIREHOSE_QUEUES_LOCK,
@@ -57,6 +61,73 @@ class PluginDatabase:
 
     def new_con(self):
         return self.con
+
+    def handle_by_did(self, did: str) -> Optional[str]:
+        row = self.con.execute(
+            "SELECT handle FROM user WHERE did=?", (did,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def did_by_handle(self, handle: str) -> Optional[str]:
+        row = self.con.execute(
+            "SELECT did FROM user WHERE handle=?", (handle,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def create_account(
+        self,
+        did: str,
+        handle: str,
+        password: str,
+        privkey,
+    ) -> None:
+        argon2 = Argon2id(
+            salt=secrets.token_bytes(16),
+            length=32,
+            iterations=3,
+            lanes=4,
+            memory_cost=65536,
+        )
+        pw_hash = argon2.derive_phc_encoded(password.encode())
+        privkey_pem = crypto.privkey_to_pem(privkey)
+
+        with self.con:
+            tid = util.tid_now()
+            empty_mst = MSTNode.empty_root()
+            initial_commit = {
+                "did": did,
+                "version": static_config.ATPROTO_REPO_VERSION_3,
+                "data": empty_mst.cid,
+                "rev": tid,
+                "prev": None,
+            }
+            initial_commit["sig"] = crypto.raw_sign(
+                privkey, cbrrr.encode_dag_cbor(initial_commit)
+            )
+            commit_bytes = cbrrr.encode_dag_cbor(initial_commit)
+            commit_cid = cbrrr.CID.cidv1_dag_cbor_sha256_32_from(commit_bytes)
+            self.con.execute(
+                """
+                INSERT INTO user(
+                    did, handle, prefs, pw_hash, signing_key, head, rev, commit_bytes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    did,
+                    handle,
+                    b'{"preferences":[]}',
+                    pw_hash,
+                    privkey_pem,
+                    bytes(commit_cid),
+                    tid,
+                    commit_bytes,
+                ),
+            )
+            user_id = self.con.last_insert_rowid()
+            self.con.execute(
+                "INSERT INTO mst(repo, cid, since, value) VALUES (?, ?, ?, ?)",
+                (user_id, bytes(empty_mst.cid), tid, empty_mst.serialised),
+            )
 
 
 # ── Jinja helpers ─────────────────────────────────────────────────────────────
