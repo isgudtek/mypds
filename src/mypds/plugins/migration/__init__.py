@@ -322,60 +322,48 @@ async def migrate_complete(request: web.Request):
 
 @routes.post("/migrate/request-plc-email")
 async def migrate_request_plc_email(request: web.Request):
-    """Step 3a: ask bsky.social to email the user a PLC signing token."""
+    """Step 3a: re-auth with bsky and request a PLC signing email."""
     body = await request.json()
-    session_token = body.get("session_token", "")
-    pf = db.get_preflight(session_token)
-    if not pf or not pf.get("imported"):
-        raise web.HTTPBadRequest(text="Session invalid or account not yet imported.")
+    handle = body.get("handle", "").strip().lstrip("@")
+    password = body.get("password", "")
+    if not handle or not password:
+        raise web.HTTPBadRequest(text="Bluesky handle and password required.")
     try:
-        await asyncio.to_thread(
-            _bsky_post,
-            "com.atproto.identity.requestPlcOperationSignature",
-            {},
-            pf["bsky_token"],
-        )
+        sess = await asyncio.to_thread(_bsky_post, "com.atproto.server.createSession", {"identifier": handle, "password": password})
+        bsky_token = sess["accessJwt"]
+        await asyncio.to_thread(_bsky_post, "com.atproto.identity.requestPlcOperationSignature", {}, bsky_token)
     except web.HTTPBadGateway as e:
         logger.error(f"[migration] requestPlcOperationSignature failed: {e}")
-        raise web.HTTPBadGateway(text=f"bsky.social could not send email: {e}")
+        raise web.HTTPBadGateway(text=f"bsky.social error: {e}")
     return web.json_response({"ok": True})
 
 
 @routes.post("/migrate/finalize-plc")
 async def migrate_finalize_plc(request: web.Request):
-    """Step 3b: submit signed PLC op to point DID at this PDS."""
+    """Step 3b: sign and submit PLC op using bsky credentials + email token."""
     db = get_db(request)
     body = await request.json()
-    session_token = body.get("session_token", "")
+    handle = body.get("handle", "").strip().lstrip("@")
+    password = body.get("password", "")
     email_token = body.get("token", "").strip()
-    pf = db.get_preflight(session_token)
-    if not pf or not pf.get("imported"):
-        raise web.HTTPBadRequest(text="Session invalid or account not yet imported.")
-    if not email_token:
-        raise web.HTTPBadRequest(text="Email token required.")
+    if not handle or not password or not email_token:
+        raise web.HTTPBadRequest(text="Handle, password and token are all required.")
 
-    did = pf["did"]
     pds_pfx = db.config.get("pds_pfx", "")
     plc_host = db.config.get("plc_host", "https://plc.directory")
+
+    sess = await asyncio.to_thread(_bsky_post, "com.atproto.server.createSession", {"identifier": handle, "password": password})
+    bsky_token = sess["accessJwt"]
+    did = sess["did"]
 
     signed = await asyncio.to_thread(
         _bsky_post,
         "com.atproto.identity.signPlcOperation",
-        {
-            "token": email_token,
-            "services": {
-                "atproto_pds": {
-                    "type": "AtprotoPersonalDataServer",
-                    "endpoint": pds_pfx,
-                }
-            },
-        },
-        pf["bsky_token"],
+        {"token": email_token, "services": {"atproto_pds": {"type": "AtprotoPersonalDataServer", "endpoint": pds_pfx}}},
+        bsky_token,
     )
     await asyncio.to_thread(_submit_plc_op, signed["operation"], did, plc_host)
     logger.info(f"[migration] PLC updated for {did} → {pds_pfx}")
-
-    db.delete_preflight(session_token)
     return web.json_response({"ok": True, "did": did, "pds": pds_pfx})
 
 

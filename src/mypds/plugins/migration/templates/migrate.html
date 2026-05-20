@@ -94,14 +94,18 @@
     <div class="steps-hint">
       Your posts are imported. Now tell the network your account lives here.<br><br>
       <b>1.</b> Click "Send Email" — bsky.social will email your registered address.<br>
-      <b>2.</b> Paste the token from that email below and click "Complete".
+      <b>2.</b> Paste the token and click "Complete Migration".
     </div>
+    <label>Bluesky handle</label>
+    <input id="plc_handle" type="text" placeholder="you.bsky.social" autocomplete="username">
+    <label>Bluesky password</label>
+    <input id="plc_pass" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password">
     <div class="err" id="err3a" style="margin-top:10px"></div>
     <button class="btn" id="btn3a" onclick="requestPlcEmail()" style="margin-top:16px">Send Migration Email</button>
 
     <div id="plc_token_section" style="display:none; margin-top:20px">
       <label>Token from email</label>
-      <input id="plc_token" type="text" placeholder="paste the code from the email">
+      <input id="plc_token" type="text" placeholder="paste the code from the email" autocomplete="off">
       <div class="err" id="err3b"></div>
       <button class="btn" id="btn3b" onclick="finalizePlc()">Complete Migration</button>
     </div>
@@ -219,6 +223,9 @@ async function step2() {
 }
 
 async function requestPlcEmail() {
+  const handle = document.getElementById("plc_handle").value.trim().replace(/^@/, "");
+  const pass   = document.getElementById("plc_pass").value;
+  if (!handle || !pass) { err("err3a", "Enter your Bluesky handle and password."); return; }
   const btn = document.getElementById("btn3a");
   btn.disabled = true; btn.textContent = "Sending…";
   err("err3a", "");
@@ -226,13 +233,13 @@ async function requestPlcEmail() {
     const r = await fetch("/migrate/request-plc-email", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({session_token: _session_token})
+      body: JSON.stringify({handle, password: pass})
     });
     let d; try { d = await r.json(); } catch { d = {text: await r.text().catch(()=>"")}; }
+    if (!r.ok) { err("err3a", d.text || d.message || "Error sending email."); btn.disabled = false; btn.textContent = "Send Migration Email"; return; }
+    btn.textContent = "Email sent! Check your inbox.";
     document.getElementById("plc_token_section").style.display = "block";
     document.getElementById("plc_token").focus();
-    if (!r.ok) { err("err3a", (d.text || d.message || "Error sending email.") + " — if you already received an email, paste the token below anyway."); return; }
-    btn.textContent = "Email sent!";
   } catch(e) {
     err("err3a", "Network error — try again.");
     btn.disabled = false; btn.textContent = "Send Migration Email";
@@ -240,7 +247,9 @@ async function requestPlcEmail() {
 }
 
 async function finalizePlc() {
-  const token = document.getElementById("plc_token").value.trim();
+  const handle = document.getElementById("plc_handle").value.trim().replace(/^@/, "");
+  const pass   = document.getElementById("plc_pass").value;
+  const token  = document.getElementById("plc_token").value.trim();
   if (!token) { err("err3b", "Paste the token from the email."); return; }
   const btn = document.getElementById("btn3b");
   btn.disabled = true; btn.textContent = "Updating DID…";
@@ -249,10 +258,10 @@ async function finalizePlc() {
     const r = await fetch("/migrate/finalize-plc", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({session_token: _session_token, token})
+      body: JSON.stringify({handle, password: pass, token})
     });
-    const d = await r.json();
-    if (!r.ok) { err("err3b", d.text || "PLC update failed. Wrong token?"); btn.disabled = false; btn.textContent = "Complete Migration"; return; }
+    let d; try { d = await r.json(); } catch { d = {text: await r.text().catch(()=>"")}; }
+    if (!r.ok) { err("err3b", d.text || d.message || "PLC update failed. Wrong token?"); btn.disabled = false; btn.textContent = "Complete Migration"; return; }
     show("step4");
   } catch(e) {
     err("err3b", "Network error — try again.");
