@@ -15,6 +15,7 @@ Also exposes:
   POST /xrpc/com.atproto.server.activateAccount
   POST /xrpc/com.atproto.server.deactivateAccount
 """
+import asyncio
 import base64
 import hashlib
 import io
@@ -292,8 +293,9 @@ async def migrate_complete(request: web.Request):
     if db.handle_by_did(did):
         raise web.HTTPConflict(text="This DID is already hosted on this PDS.")
 
-    # 1. Verify ownership: look for the code in their bsky feed
-    if not _verify_ownership_post(did, verify_code, bsky_token):
+    # 1. Verify ownership: look for the code in their bsky feed (runs in thread — blocking I/O)
+    verified = await asyncio.to_thread(_verify_ownership_post, did, verify_code, bsky_token)
+    if not verified:
         raise web.HTTPBadRequest(
             text=f"Verification post not found. Make sure you posted '{verify_code}' on your Bluesky account and try again."
         )
@@ -302,18 +304,18 @@ async def migrate_complete(request: web.Request):
     # 2. Generate a signing key for this PDS
     repo_privkey = crypto.keygen_p256()
 
-    # 3. Download full repo CAR from bsky
+    # 3. Download full repo CAR from bsky (runs in thread — can be large/slow)
     logger.info(f"[migration] fetching repo CAR for {did}")
-    car_bytes = _fetch_repo_car(did, bsky_token)
+    car_bytes = await asyncio.to_thread(_fetch_repo_car, did, bsky_token)
     logger.info(f"[migration] CAR size: {len(car_bytes)} bytes")
 
     # 4. Create the account locally
     db.create_account(did=did, handle=handle, password=new_password, privkey=repo_privkey)
     logger.info(f"[migration] account created locally for {did}")
 
-    # 5. Import all records from the CAR
+    # 5. Import all records from the CAR (runs in thread — batch writes can take time)
     try:
-        _import_car(db, did, car_bytes, repo_privkey)
+        await asyncio.to_thread(_import_car, db, did, car_bytes, repo_privkey)
         logger.info(f"[migration] CAR imported for {did}")
     except Exception as e:
         logger.warning(f"[migration] CAR import partial failure: {e} — history may be incomplete")
