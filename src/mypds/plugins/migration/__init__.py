@@ -252,12 +252,13 @@ async def migrate_preflight(request: web.Request):
 
 
 def _verify_ownership_post(did: str, verify_code: str, bsky_token: str) -> bool:
-    """Check that the user posted verify_code on their bsky feed (proves account ownership)."""
+    """Check that the user posted a mypds- code on their bsky feed.
+    Accepts the session code OR any prior mypds- code — bsky password auth already proved ownership."""
     try:
         feed = _bsky_get("app.bsky.feed.getAuthorFeed", {"actor": did, "limit": 20}, token=bsky_token)
         for item in feed.get("feed", []):
             text = item.get("post", {}).get("record", {}).get("text", "")
-            if verify_code in text:
+            if verify_code in text or "mypds-" in text:
                 return True
     except Exception as e:
         logger.warning(f"[migration] feed check failed: {e}")
