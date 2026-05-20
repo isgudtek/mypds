@@ -64,6 +64,12 @@ mypds = "mypds.__main__:main"
 line-length = 80
 format.indent-style = "tab"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["templates/*.html", "static/**/*", "*.html", "*.css", "*.js"]
+
 [tool.setuptools_scm]
 
 [tool.pytest.ini_options]

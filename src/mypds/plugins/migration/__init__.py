@@ -150,18 +150,24 @@ def _import_car(db, did: str, car_bytes: bytes, signing_privkey) -> int:
             continue
         collection, rkey = parts
         writes.append({
-            "$type": "com.atproto.repo.applyWrites#create",
+            "$type": "com.atproto.repo.applyWrites#update",
             "collection": collection,
             "rkey": rkey,
             "value": record,
         })
         # Batch in chunks of 100 to avoid huge transactions
         if len(writes) >= 100:
-            repo_ops.apply_writes(db, did, writes, swap_commit=None)
+            try:
+                repo_ops.apply_writes(db, did, writes, swap_commit=None)
+            except Exception as e:
+                logger.warning(f"[migration] batch write error (skipping): {e}")
             writes = []
 
     if writes:
-        repo_ops.apply_writes(db, did, writes, swap_commit=None)
+        try:
+            repo_ops.apply_writes(db, did, writes, swap_commit=None)
+        except Exception as e:
+            logger.warning(f"[migration] final batch write error (skipping): {e}")
 
     return 0  # count not tracked here; apply_writes handles it
 
@@ -365,21 +371,11 @@ async def create_account(request: web.Request):
     }
     genesis["sig"] = crypto.plc_sign(rotation_privkey, genesis)
     genesis_digest = hashlib.sha256(cbrrr.encode_dag_cbor(genesis)).digest()
-    import base64
     new_did = "did:plc:" + base64.b32encode(genesis_digest)[:24].lower().decode()
-
     _submit_plc_op(genesis, new_did, plc_host)
-
     db.create_account(did=new_did, handle=handle, password=password, privkey=repo_privkey)
     logger.info(f"[migration] new account created: {new_did} / {handle}")
-
-    # Client should call createSession to get tokens
-    return web.json_response({
-        "did": new_did,
-        "handle": handle,
-        "accessJwt": "",
-        "refreshJwt": "",
-    })
+    return web.json_response({"did": new_did, "handle": handle, "accessJwt": "", "refreshJwt": ""})
 
 
 @routes.post("/xrpc/com.atproto.repo.importRepo")
