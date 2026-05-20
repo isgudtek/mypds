@@ -277,9 +277,14 @@ async def migrate_complete(request: web.Request):
     verify_code = pf["verify_code"]
     pds_pfx = db.config.get("pds_pfx", "")
 
-    # Check account doesn't already exist locally
+    # If account already exists, skip import and go straight to step 3
     if db.handle_by_did(did):
-        raise web.HTTPConflict(text="This DID is already hosted on this PDS.")
+        db.update_preflight(session_token, imported=True, ts=time.time())
+        return web.json_response({
+            "did": did, "handle": handle, "pds": pds_pfx,
+            "session_token": session_token,
+            "message": f"Account {handle} already imported. Proceed to step 3.",
+        })
 
     # 1. Verify ownership: look for the code in their bsky feed (runs in thread — blocking I/O)
     verified = await asyncio.to_thread(_verify_ownership_post, did, verify_code, bsky_token)
