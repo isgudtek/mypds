@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 # https://rogerbinns.github.io/apsw/bestpractice.html
 apsw.bestpractice.apply(apsw.bestpractice.recommended)
+# Override the 100ms default busy timeout — too short under concurrent migration writes.
+# 5000ms lets normal posts wait out a batch import without "database is locked".
+apsw.connection_hooks.append(lambda con: con.set_busy_timeout(5000))
 
 
 class MillipdsConfigPartial(TypedDict):
