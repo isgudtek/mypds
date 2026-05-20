@@ -96,7 +96,8 @@ def _bsky_post(path: str, payload: dict, token: str = "") -> dict:
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
-            return json.loads(r.read())
+            body = r.read()
+            return json.loads(body) if body else {}
     except urllib.error.HTTPError as e:
         body = e.read().decode()
         raise web.HTTPBadGateway(text=f"bsky.social error: {body}")
