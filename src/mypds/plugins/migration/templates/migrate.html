@@ -88,12 +88,36 @@
     <div class="progress" id="progress">Importing your posts… hang tight</div>
   </div>
 
-  <!-- Done -->
+  <!-- Step 3: PLC update -->
   <div class="step" id="step3">
+    <div class="pill">Step 3 of 3 — point your DID here</div>
+    <div class="steps-hint">
+      Your posts are imported. Now tell the network your account lives here.<br><br>
+      <b>1.</b> Click "Send Email" — bsky.social will email your registered address.<br>
+      <b>2.</b> Paste the token from that email below and click "Complete".
+    </div>
+    <div class="err" id="err3a" style="margin-top:10px"></div>
+    <button class="btn" id="btn3a" onclick="requestPlcEmail()" style="margin-top:16px">Send Migration Email</button>
+
+    <div id="plc_token_section" style="display:none; margin-top:20px">
+      <label>Token from email</label>
+      <input id="plc_token" type="text" placeholder="paste the code from the email">
+      <div class="err" id="err3b"></div>
+      <button class="btn" id="btn3b" onclick="finalizePlc()">Complete Migration</button>
+    </div>
+
+    <p class="hint" style="margin-top:14px">
+      Skip this if you only want a local copy — your DID will still point to bsky.social.
+      <a href="#" onclick="show('step4'); return false" style="color:var(--muted)">Skip →</a>
+    </p>
+  </div>
+
+  <!-- Done -->
+  <div class="step" id="step4">
     <div class="success-box">
       <div class="icon">&#10003;</div>
       <h2 id="done_handle"></h2>
-      <p>Your account data is now on <strong id="done_pds"></strong>.<br>
+      <p>Your account is fully on <strong id="done_pds"></strong>.<br>
          Log in with your new password. You can delete the verification post from Bluesky now.</p>
     </div>
   </div>
@@ -107,6 +131,7 @@
 const MIGRATION_ENABLED = {{MIGRATION_ENABLED}};
 let _session_token = "";
 let _verify_code = "";
+let _did = "";
 
 if (!MIGRATION_ENABLED) {
   document.getElementById("step1").style.display = "none";
@@ -180,6 +205,8 @@ async function step2() {
     });
     const d = await r.json();
     if (!r.ok) { err("err2", d.text || d.message || "Migration failed. Did you post the code?"); return; }
+    _session_token = d.session_token;
+    _did = d.did;
     document.getElementById("done_handle").textContent = "@" + d.handle;
     document.getElementById("done_pds").textContent = d.pds;
     show("step3");
@@ -188,6 +215,48 @@ async function step2() {
   } finally {
     btn.disabled = false; btn.textContent = "I Posted It — Migrate Account";
     prog.style.display = "none";
+  }
+}
+
+async function requestPlcEmail() {
+  const btn = document.getElementById("btn3a");
+  btn.disabled = true; btn.textContent = "Sending…";
+  err("err3a", "");
+  try {
+    const r = await fetch("/migrate/request-plc-email", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_token: _session_token})
+    });
+    const d = await r.json();
+    if (!r.ok) { err("err3a", d.text || "Failed to send email."); return; }
+    btn.textContent = "Email sent!";
+    document.getElementById("plc_token_section").style.display = "block";
+    document.getElementById("plc_token").focus();
+  } catch(e) {
+    err("err3a", "Network error — try again.");
+    btn.disabled = false; btn.textContent = "Send Migration Email";
+  }
+}
+
+async function finalizePlc() {
+  const token = document.getElementById("plc_token").value.trim();
+  if (!token) { err("err3b", "Paste the token from the email."); return; }
+  const btn = document.getElementById("btn3b");
+  btn.disabled = true; btn.textContent = "Updating DID…";
+  err("err3b", "");
+  try {
+    const r = await fetch("/migrate/finalize-plc", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_token: _session_token, token})
+    });
+    const d = await r.json();
+    if (!r.ok) { err("err3b", d.text || "PLC update failed. Wrong token?"); btn.disabled = false; btn.textContent = "Complete Migration"; return; }
+    show("step4");
+  } catch(e) {
+    err("err3b", "Network error — try again.");
+    btn.disabled = false; btn.textContent = "Complete Migration";
   }
 }
 

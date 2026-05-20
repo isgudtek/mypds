@@ -320,15 +320,75 @@ async def migrate_complete(request: web.Request):
     except Exception as e:
         logger.warning(f"[migration] CAR import partial failure: {e} — history may be incomplete")
 
-    # 6. Clean up
-    _preflight.pop(session_token, None)
+    # 6. Keep session alive for Step 3 (PLC update), reset TTL
+    pf["ts"] = time.time()
+    pf["imported"] = True
 
     return web.json_response({
         "did": did,
         "handle": handle,
         "pds": pds_pfx,
+        "session_token": session_token,
         "message": f"Account {handle} imported. Your posts live here now.",
     })
+
+
+@routes.post("/migrate/request-plc-email")
+async def migrate_request_plc_email(request: web.Request):
+    """Step 3a: ask bsky.social to email the user a PLC signing token."""
+    body = await request.json()
+    session_token = body.get("session_token", "")
+    pf = _preflight.get(session_token)
+    if not pf or not pf.get("imported"):
+        raise web.HTTPBadRequest(text="Session invalid or account not yet imported.")
+    try:
+        await asyncio.to_thread(
+            _bsky_post,
+            "com.atproto.identity.requestPlcOperationSignature",
+            {},
+            pf["bsky_token"],
+        )
+    except web.HTTPBadGateway as e:
+        raise web.HTTPBadGateway(text=f"bsky.social could not send email: {e}")
+    return web.json_response({"ok": True})
+
+
+@routes.post("/migrate/finalize-plc")
+async def migrate_finalize_plc(request: web.Request):
+    """Step 3b: submit signed PLC op to point DID at this PDS."""
+    db = get_db(request)
+    body = await request.json()
+    session_token = body.get("session_token", "")
+    email_token = body.get("token", "").strip()
+    pf = _preflight.get(session_token)
+    if not pf or not pf.get("imported"):
+        raise web.HTTPBadRequest(text="Session invalid or account not yet imported.")
+    if not email_token:
+        raise web.HTTPBadRequest(text="Email token required.")
+
+    did = pf["did"]
+    pds_pfx = db.config.get("pds_pfx", "")
+    plc_host = db.config.get("plc_host", "https://plc.directory")
+
+    signed = await asyncio.to_thread(
+        _bsky_post,
+        "com.atproto.identity.signPlcOperation",
+        {
+            "token": email_token,
+            "services": {
+                "atproto_pds": {
+                    "type": "AtprotoPersonalDataServer",
+                    "endpoint": pds_pfx,
+                }
+            },
+        },
+        pf["bsky_token"],
+    )
+    await asyncio.to_thread(_submit_plc_op, signed["operation"], did, plc_host)
+    logger.info(f"[migration] PLC updated for {did} → {pds_pfx}")
+
+    _preflight.pop(session_token, None)
+    return web.json_response({"ok": True, "did": did, "pds": pds_pfx})
 
 
 # ── ATProto XRPC Endpoints ───────────────────────────────────────────────────
