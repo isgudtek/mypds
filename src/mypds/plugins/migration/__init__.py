@@ -409,6 +409,3 @@ async def deactivate_account(request: web.Request):
     return web.json_response({})
 
 
-if __name__ == "__main__":
-    from mypds.plugin_runner import run_plugin
-    run_plugin(routes, APP_NAME)
