@@ -204,6 +204,7 @@ async def migrate_index(request: web.Request):
 @routes.post("/migrate/preflight")
 async def migrate_preflight(request: web.Request):
     """Step 1: auth with bsky, generate a post-verification code."""
+    db = get_db(request)
     ws = get_web_store(request)
     if ws.get_plugin_setting(APP_NAME, "migration_enabled", "true") != "true":
         raise web.HTTPForbidden(text="Migration is disabled on this PDS.")
