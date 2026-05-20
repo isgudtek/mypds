@@ -349,6 +349,7 @@ async def migrate_request_plc_email(request: web.Request):
             pf["bsky_token"],
         )
     except web.HTTPBadGateway as e:
+        logger.error(f"[migration] requestPlcOperationSignature failed: {e}")
         raise web.HTTPBadGateway(text=f"bsky.social could not send email: {e}")
     return web.json_response({"ok": True})
 

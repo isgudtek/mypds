@@ -228,8 +228,8 @@ async function requestPlcEmail() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({session_token: _session_token})
     });
-    const d = await r.json();
-    if (!r.ok) { err("err3a", d.text || "Failed to send email."); return; }
+    let d; try { d = await r.json(); } catch { d = {text: await r.text().catch(()=>"")}; }
+    if (!r.ok) { err("err3a", d.text || d.message || "Failed to send email."); return; }
     btn.textContent = "Email sent!";
     document.getElementById("plc_token_section").style.display = "block";
     document.getElementById("plc_token").focus();
