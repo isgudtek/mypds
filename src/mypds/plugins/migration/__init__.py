@@ -85,8 +85,10 @@ def _clean_preflight():
 
 
 def _bsky_post(path: str, payload: dict, token: str = "") -> dict:
-    data = json.dumps(payload).encode()
-    headers = {"Content-Type": "application/json"}
+    data = json.dumps(payload).encode() if payload else None
+    headers = {}
+    if payload:
+        headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(
