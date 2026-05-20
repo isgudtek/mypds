@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Migrate from Bluesky — mypds</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --text: #e2e8f0; --muted: #64748b; --accent: #6366f1;
+    --green: #22c55e; --red: #ef4444; --mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+         min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+          padding: 36px; width: 100%; max-width: 480px; }
+  h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 6px; }
+  .sub { font-size: .82rem; color: var(--muted); margin-bottom: 28px; line-height: 1.5; }
+  .step { display: none; }
+  .step.active { display: block; }
+  label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: 4px; margin-top: 14px; }
+  input { width: 100%; padding: 9px 12px; background: var(--bg); border: 1px solid var(--border);
+          border-radius: 6px; color: var(--text); font-size: .88rem; outline: none; }
+  input:focus { border-color: var(--accent); }
+  .btn { width: 100%; margin-top: 20px; padding: 10px; background: var(--accent); color: #fff;
+         border: none; border-radius: 7px; font-size: .9rem; font-weight: 500; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .hint { font-size: .72rem; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .err { color: var(--red); font-size: .8rem; margin-top: 10px; display: none; }
+  .ok { color: var(--green); font-size: .8rem; margin-top: 10px; display: none; }
+  .pill { display: inline-block; font-size: .68rem; font-family: var(--mono); background: var(--border);
+          border-radius: 4px; padding: 2px 7px; color: var(--muted); margin-bottom: 10px; }
+  .success-box { text-align: center; padding: 20px 0; }
+  .success-box .icon { font-size: 2.5rem; margin-bottom: 12px; }
+  .success-box h2 { font-size: 1.1rem; margin-bottom: 8px; }
+  .success-box p { font-size: .82rem; color: var(--muted); line-height: 1.6; }
+  .progress { font-size: .8rem; color: var(--muted); margin-top: 12px; text-align: center; display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Migrate from Bluesky</h1>
+  <p class="sub">Bring your account, handle, and post history to this PDS. Your followers see nothing change.</p>
+
+  <!-- Step 1: Bluesky credentials -->
+  <div class="step active" id="step1">
+    <div class="pill">Step 1 of 2 — verify identity</div>
+    <label>Bluesky handle</label>
+    <input id="bsky_handle" type="text" placeholder="you.bsky.social" autocomplete="username">
+    <label>Bluesky password (or app password)</label>
+    <input id="bsky_pass" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password">
+    <p class="hint">We'll send a verification code to your Bluesky email address. Your password is never stored.</p>
+    <div class="err" id="err1"></div>
+    <button class="btn" id="btn1" onclick="step1()">Send verification code</button>
+  </div>
+
+  <!-- Step 2: Email token + new password -->
+  <div class="step" id="step2">
+    <div class="pill">Step 2 of 2 — confirm &amp; set password</div>
+    <label>Verification code (from your email)</label>
+    <input id="email_token" type="text" placeholder="XXXXXX" autocomplete="one-time-code" style="letter-spacing:.15em; font-family:var(--mono);">
+    <label>New password for this PDS</label>
+    <input id="new_pass" type="password" placeholder="choose a strong password" autocomplete="new-password">
+    <label>Confirm password</label>
+    <input id="new_pass2" type="password" placeholder="repeat password" autocomplete="new-password">
+    <p class="hint">Your Bluesky posts will be imported. This takes up to a minute for large accounts.</p>
+    <div class="err" id="err2"></div>
+    <button class="btn" id="btn2" onclick="step2()">Migrate account</button>
+    <div class="progress" id="progress">Importing your posts… hang tight ⏳</div>
+  </div>
+
+  <!-- Done -->
+  <div class="step" id="step3">
+    <div class="success-box">
+      <div class="icon">✓</div>
+      <h2 id="done_handle"></h2>
+      <p>Your account is live on <strong id="done_pds"></strong>.<br>
+         Open the Bluesky app — everything looks the same, but you're self-hosted now.</p>
+    </div>
+  </div>
+
+  <div id="disabled_msg" style="display:none; text-align:center; color:var(--muted); font-size:.85rem; padding:20px 0;">
+    Migration is not enabled on this PDS.<br>Contact the administrator.
+  </div>
+</div>
+
+<script>
+const MIGRATION_ENABLED = {{MIGRATION_ENABLED}};
+let _session_token = "";
+
+if (!MIGRATION_ENABLED) {
+  document.getElementById("step1").style.display = "none";
+  document.getElementById("disabled_msg").style.display = "block";
+}
+
+function show(id) {
+  document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+function err(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
+async function step1() {
+  const handle = document.getElementById("bsky_handle").value.trim().replace(/^@/, "");
+  const pass   = document.getElementById("bsky_pass").value;
+  if (!handle || !pass) { err("err1", "Enter your Bluesky handle and password."); return; }
+
+  const btn = document.getElementById("btn1");
+  btn.disabled = true; btn.textContent = "Sending…";
+  err("err1", "");
+
+  try {
+    const r = await fetch("/migrate/preflight", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({handle, password: pass})
+    });
+    const d = await r.json();
+    if (!r.ok) { err("err1", d.text || d.message || "Error. Check handle and password."); return; }
+    _session_token = d.token;
+    show("step2");
+    document.getElementById("email_token").focus();
+  } catch(e) {
+    err("err1", "Network error — try again.");
+  } finally {
+    btn.disabled = false; btn.textContent = "Send verification code";
+  }
+}
+
+async function step2() {
+  const token  = document.getElementById("email_token").value.trim();
+  const pass   = document.getElementById("new_pass").value;
+  const pass2  = document.getElementById("new_pass2").value;
+  if (!token)        { err("err2", "Enter the verification code from your email."); return; }
+  if (pass.length < 8) { err("err2", "Password must be at least 8 characters."); return; }
+  if (pass !== pass2) { err("err2", "Passwords do not match."); return; }
+
+  const btn = document.getElementById("btn2");
+  const prog = document.getElementById("progress");
+  btn.disabled = true; btn.textContent = "Migrating…";
+  prog.style.display = "block";
+  err("err2", "");
+
+  try {
+    const r = await fetch("/migrate/complete", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_token: _session_token, email_token: token, password: pass})
+    });
+    const d = await r.json();
+    if (!r.ok) { err("err2", d.text || d.message || "Migration failed. Check your code and try again."); return; }
+    document.getElementById("done_handle").textContent = "@" + d.handle;
+    document.getElementById("done_pds").textContent = d.pds;
+    show("step3");
+  } catch(e) {
+    err("err2", "Network error — try again.");
+  } finally {
+    btn.disabled = false; btn.textContent = "Migrate account";
+    prog.style.display = "none";
+  }
+}
+
+// Allow Enter key to advance
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  if (document.getElementById("step1").classList.contains("active")) step1();
+  else if (document.getElementById("step2").classList.contains("active")) step2();
+});
+</script>
+</body>
+</html>
