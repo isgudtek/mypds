@@ -74,7 +74,7 @@ routes = web.RouteTableDef()
 
 # In-memory preflight sessions: token → {bsky_token, did, handle, ts}
 _preflight: dict = {}
-_PREFLIGHT_TTL = 600  # 10 min
+_PREFLIGHT_TTL = 1800  # 30 min
 
 
 def _clean_preflight():

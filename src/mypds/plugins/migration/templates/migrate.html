@@ -171,7 +171,7 @@ async function step1() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({handle, password: pass})
     });
-    const d = await r.json();
+    let d; try { d = await r.json(); } catch { d = {text: await r.text().catch(()=>"")}; }
     if (!r.ok) { err("err1", d.text || d.message || "Error. Check handle and password."); return; }
     _session_token = d.token;
     _verify_code = d.verify_code;
@@ -203,7 +203,7 @@ async function step2() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({session_token: _session_token, password: pass})
     });
-    const d = await r.json();
+    let d; try { d = await r.json(); } catch { d = {text: await r.text().catch(()=>"")}; }
     if (!r.ok) { err("err2", d.text || d.message || "Migration failed. Did you post the code?"); return; }
     _session_token = d.session_token;
     _did = d.did;
