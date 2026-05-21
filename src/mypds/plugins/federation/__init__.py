@@ -315,7 +315,6 @@ async def club_post(request: web.Request):
         "$type": CLUB_NSID,
         "clubId": club_id,
         "ciphertext": encrypted["ciphertext"],
-        "keys": encrypted["keys"],
         "createdAt": created_at,
     }
 
