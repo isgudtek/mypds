@@ -27,19 +27,20 @@ RECONNECT_DELAY = 30  # seconds
 class FederationPeer:
     def __init__(self, db_conn, own_did: str, own_privkey: str, own_pubkey: str,
                  club_id: str, seed_url: str, membership: str, whitelist_pattern: str,
-                 own_pds_url: str = "", on_new_record=None):
+                 own_pds_url: str = "", club_key: str = "", on_new_record=None):
         self.db = db_conn
         self.own_did = own_did
         self.own_privkey = own_privkey
         self.own_pubkey = own_pubkey
         self.own_pds_url = own_pds_url.rstrip("/")
         self.club_id = club_id
+        self.club_key = club_key
         self.seed_url = seed_url.rstrip("/")
-        self.membership = membership  # "open" or "whitelist"
-        self.whitelist_pattern = whitelist_pattern  # e.g. "*.mycrab.space"
+        self.membership = membership
+        self.whitelist_pattern = whitelist_pattern
         self.on_new_record = on_new_record
         self._tasks: list[asyncio.Task] = []
-        self._known_peers: dict[str, dict] = {}  # did -> {pubkey, pds_url}
+        self._known_peers: dict[str, dict] = {}
         self._running = False
         self._new_member_event: asyncio.Event | None = None
         self._backfilled: set = set()
@@ -125,7 +126,14 @@ class FederationPeer:
                 if resp.status != 200:
                     return
                 data = await resp.json()
-                # Register self from their perspective
+                # Store club key if seed provided one and we don't have it yet
+                received_key = data.get("club_key", "")
+                if received_key and not self.club_key:
+                    self.club_key = received_key
+                    self.db.execute(
+                        "UPDATE federation_keypair SET club_key=? WHERE club_id=?",
+                        (received_key, self.club_id)
+                    )
                 members = data.get("members", [])
                 for m in members:
                     mdid, mpubkey, mpds = m.get("did"), m.get("pubkey"), m.get("pds_url", "")
@@ -189,7 +197,7 @@ class FederationPeer:
                 rec = data.get("value", {})
                 if rec.get("clubId") != self.club_id:
                     return
-                plaintext = crypto.decrypt(rec, self.own_did, self.own_privkey)
+                plaintext = crypto.decrypt(rec, self.own_did, self.own_privkey, self.club_key)
                 if plaintext is None:
                     return
                 actual_cid = data.get("cid", cid)
@@ -227,7 +235,7 @@ class FederationPeer:
                         rkey = item.get("uri", "").split("/")[-1]
                         if rec.get("clubId") != self.club_id:
                             continue
-                        plaintext = crypto.decrypt(rec, self.own_did, self.own_privkey)
+                        plaintext = crypto.decrypt(rec, self.own_did, self.own_privkey, self.club_key)
                         if plaintext:
                             self._store_record(peer_did, rkey, plaintext, rec.get("createdAt", ""), cid)
                     cursor = data.get("cursor")

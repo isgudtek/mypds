@@ -128,25 +128,34 @@ def _ensure_tables(db):
         CREATE TABLE IF NOT EXISTS federation_keypair (
             club_id TEXT PRIMARY KEY,
             privkey TEXT NOT NULL,
-            pubkey TEXT NOT NULL
+            pubkey TEXT NOT NULL,
+            club_key TEXT NOT NULL DEFAULT ''
         )
     """)
+    try:
+        db.con.execute("ALTER TABLE federation_keypair ADD COLUMN club_key TEXT NOT NULL DEFAULT ''")
+    except Exception:
+        pass
 
 
 
-def _get_or_create_keypair(db, club_id: str) -> tuple[str, str]:
+def _get_or_create_keypair(db, club_id: str) -> tuple[str, str, str]:
     row = db.con.execute(
-        "SELECT privkey, pubkey FROM federation_keypair WHERE club_id=?", (club_id,)
+        "SELECT privkey, pubkey, club_key FROM federation_keypair WHERE club_id=?", (club_id,)
     ).fetchone()
     if row:
-        return row[0], row[1]
+        priv, pub, club_key = row
+        if not club_key:
+            club_key = crypto.generate_club_key()
+            db.con.execute("UPDATE federation_keypair SET club_key=? WHERE club_id=?", (club_key, club_id))
+        return priv, pub, club_key
     priv, pub = crypto.generate_keypair()
+    club_key = crypto.generate_club_key()
     db.con.execute(
-        "INSERT INTO federation_keypair (club_id, privkey, pubkey) VALUES (?,?,?)",
-        (club_id, priv, pub)
+        "INSERT INTO federation_keypair (club_id, privkey, pubkey, club_key) VALUES (?,?,?,?)",
+        (club_id, priv, pub, club_key)
     )
-
-    return priv, pub
+    return priv, pub, club_key
 
 
 def _own_did(db) -> str:
@@ -162,7 +171,7 @@ def _start_peer(app, ws, club_id, seed_url, membership, whitelist_pattern, own_p
     own_did = _own_did(db)
     if not own_pds_url:
         own_pds_url = db.config.get("pds_pfx", "")
-    privkey, pubkey = _get_or_create_keypair(db, club_id)
+    privkey, pubkey, club_key = _get_or_create_keypair(db, club_id)
 
     if _peer_task and not _peer_task.done():
         _peer_task.cancel()
@@ -173,6 +182,7 @@ def _start_peer(app, ws, club_id, seed_url, membership, whitelist_pattern, own_p
         own_privkey=privkey,
         own_pubkey=pubkey,
         own_pds_url=own_pds_url,
+        club_key=club_key,
         club_id=club_id,
         seed_url=seed_url,
         membership=membership,
@@ -269,7 +279,7 @@ async def club_post(request: web.Request):
     data = await request.post()
     text = data.get("text", "").strip()
     own_did = sess["did"]
-    privkey, pubkey = _get_or_create_keypair(db, club_id)
+    privkey, pubkey, club_key = _get_or_create_keypair(db, club_id)
 
     # Handle optional file upload
     file_ref = file_name = mime = ""
@@ -297,14 +307,7 @@ async def club_post(request: web.Request):
         pl["mime"] = mime
     plaintext_str = json.dumps(pl)
 
-    members = db.con.execute(
-        "SELECT did, pubkey FROM federation_member WHERE club_id=?", (club_id,)
-    ).fetchall()
-    member_map = {r[0]: r[1] for r in members}
-    if own_did not in member_map:
-        member_map[own_did] = pubkey
-
-    encrypted = crypto.encrypt(plaintext_str, member_map)
+    encrypted = crypto.encrypt(plaintext_str, club_key)
     created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     rkey = created_at.replace(":", "").replace("-", "").replace("+", "")[:17]
 
@@ -446,13 +449,15 @@ async def federation_join(request: web.Request):
         if peer_url and peer_url.rstrip("/") != joining_pds.rstrip("/"):
             asyncio.create_task(_fanout_join(client, peer_url, fanout_payload))
 
-    # Return full member list
+    # Return full member list + club key (so joining node can decrypt posts)
+    _, _, club_key = _get_or_create_keypair(db, club_id)
     members = db.con.execute(
         "SELECT did, pubkey, pds_url FROM federation_member WHERE club_id=?", (club_id,)
     ).fetchall()
 
     return web.json_response({
         "club_id": club_id,
+        "club_key": club_key,
         "members": [{"did": r[0], "pubkey": r[1], "pds_url": r[2]} for r in members]
     })
 

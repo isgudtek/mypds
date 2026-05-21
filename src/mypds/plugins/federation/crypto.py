@@ -34,26 +34,29 @@ def pubkey_from_privkey(privkey_b64: str) -> str:
     return base64.b64encode(bytes(priv.public_key)).decode()
 
 
-def encrypt(plaintext: str, members: dict[str, str]) -> dict:
-    """
-    members: {did: pubkey_b64}
-    Returns record dict ready for ATProto.
-    """
-    msg_key = nacl.utils.random(nacl.secret.SecretBox.KEY_SIZE)
-    box = nacl.secret.SecretBox(msg_key)
-    ciphertext = base64.b64encode(box.encrypt(plaintext.encode())).decode()
-
-    keys = {}
-    for did, pubkey_b64 in members.items():
-        pub = nacl.public.PublicKey(base64.b64decode(pubkey_b64))
-        sealed = nacl.public.SealedBox(pub)
-        keys[did] = base64.b64encode(sealed.encrypt(msg_key)).decode()
-
-    return {"ciphertext": ciphertext, "keys": keys}
+def generate_club_key() -> str:
+    """Generate a shared symmetric key for the club."""
+    return base64.b64encode(nacl.utils.random(nacl.secret.SecretBox.KEY_SIZE)).decode()
 
 
-def decrypt(record: dict, own_did: str, privkey_b64: str) -> str | None:
-    """Returns plaintext or None if not a recipient."""
+def encrypt(plaintext: str, club_key_b64: str) -> dict:
+    """Encrypt with shared club key. Returns {ciphertext}."""
+    key = base64.b64decode(club_key_b64)
+    box = nacl.secret.SecretBox(key)
+    return {"ciphertext": base64.b64encode(box.encrypt(plaintext.encode())).decode()}
+
+
+def decrypt(record: dict, own_did: str, privkey_b64: str, club_key_b64: str = "") -> str | None:
+    """Decrypt shared-key post (v2) or legacy per-member post (v1)."""
+    # v2: shared club key
+    if "keys" not in record and club_key_b64:
+        try:
+            key = base64.b64decode(club_key_b64)
+            box = nacl.secret.SecretBox(key)
+            return box.decrypt(base64.b64decode(record["ciphertext"])).decode()
+        except Exception:
+            return None
+    # v1: per-member key wrapping (legacy)
     encrypted_key = record.get("keys", {}).get(own_did)
     if not encrypted_key:
         return None
