@@ -126,9 +126,9 @@ class FederationPeer:
                 if resp.status != 200:
                     return
                 data = await resp.json()
-                # Store club key if seed provided one and we don't have it yet
+                # Always adopt seed's club key (seed is authoritative)
                 received_key = data.get("club_key", "")
-                if received_key and not self.club_key:
+                if received_key and received_key != self.club_key:
                     self.club_key = received_key
                     self.db.execute(
                         "UPDATE federation_keypair SET club_key=? WHERE club_id=?",
