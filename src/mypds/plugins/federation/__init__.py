@@ -312,7 +312,33 @@ async def club_post(request: web.Request):
     encrypted = crypto.encrypt(plaintext_str, club_key)
     created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     rkey = created_at.replace(":", "").replace("-", "").replace("+", "")[:17]
+    local_cid = f"local-{rkey}"
 
+    # Store locally first — putRecord may be slow/locked during peer join storms
+    db.con.execute(
+        "INSERT OR IGNORE INTO federation_record"
+        " (cid, author_did, rkey, club_id, plaintext, created_at, indexed_at)"
+        " VALUES (?,?,?,?,?,?,?)",
+        (local_cid, own_did, rkey, club_id, plaintext_str, created_at, created_at)
+    )
+
+    try:
+        ts = datetime.datetime.fromisoformat(created_at.replace("Z", ""))
+        ts_human = ts.strftime("%-d %b %Y, %H:%M")
+    except Exception:
+        ts_human = created_at
+
+    cfg = db.config
+    pds_host = cfg.get("pds_pfx", "").replace("https://", "").replace("http://", "").split("/")[0]
+    _broadcast_club(club_id, {
+        "cid": local_cid, "author_did": own_did,
+        "handle": pds_host or own_did, "rkey": rkey,
+        "text": text, "file_ref": file_ref,
+        "file_name": file_name, "mime": mime,
+        "ts_human": ts_human, "created_at": created_at,
+    })
+
+    # Fire putRecord in background so peers get it via firehose (non-blocking)
     record = {
         "$type": CLUB_NSID,
         "clubId": club_id,
@@ -320,53 +346,32 @@ async def club_post(request: web.Request):
         "createdAt": created_at,
     }
 
-    # Publish to local ATProto repo so firehose carries it to peers
-    cfg = db.config
-    access_token = _jwt.encode({
-        "scope": "com.atproto.access",
-        "aud": cfg.get("pds_did", ""),
-        "sub": own_did,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + 300,
-        "jti": str(uuid.uuid4()),
-    }, cfg.get("jwt_access_secret", ""), "HS256")
-
-    # Use local URL for internal calls — pds_pfx may not resolve from inside VPS
-    pds_local = ws.get_node_setting("pds_local_url") or cfg.get("pds_pfx", "")
     client = request.app[MILLIPDS_AIOHTTP_CLIENT]
-    try:
-        async with client.post(
-            f"{pds_local}/xrpc/com.atproto.repo.putRecord",
-            json={"repo": own_did, "collection": CLUB_NSID, "rkey": rkey, "record": record},
-            headers={"Authorization": f"Bearer {access_token}"},
-        ) as resp:
-            resp_data = await resp.json()
-            actual_cid = resp_data.get("cid", "")
-            if resp.status in (200, 201) and actual_cid:
-                db.con.execute(
-                    "INSERT OR IGNORE INTO federation_record"
-                    " (cid, author_did, rkey, club_id, plaintext, created_at, indexed_at)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (actual_cid, own_did, rkey, club_id, plaintext_str, created_at, created_at)
-                )
-                try:
-                    ts = datetime.datetime.fromisoformat(created_at.replace("Z", ""))
-                    ts_human = ts.strftime("%-d %b %Y, %H:%M")
-                except Exception:
-                    ts_human = created_at
-                pds_host = cfg.get("pds_pfx", "").replace("https://", "").replace("http://", "").split("/")[0]
-                _broadcast_club(club_id, {
-                    "cid": actual_cid, "author_did": own_did,
-                    "handle": pds_host or own_did, "rkey": rkey,
-                    "text": text, "file_ref": file_ref,
-                    "file_name": file_name, "mime": mime,
-                    "ts_human": ts_human, "created_at": created_at,
-                })
-            else:
-                logger.warning(f"putRecord {resp.status}: {resp_data}")
-    except Exception as e:
-        logger.error(f"putRecord error: {e}")
 
+    async def _publish_to_repo():
+        try:
+            access_token = _jwt.encode({
+                "scope": "com.atproto.access",
+                "aud": cfg.get("pds_did", ""),
+                "sub": own_did,
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 300,
+                "jti": str(uuid.uuid4()),
+            }, cfg.get("jwt_access_secret", ""), "HS256")
+            pds_local = cfg.get("pds_pfx", "")
+            async with client.post(
+                f"{pds_local}/xrpc/com.atproto.repo.putRecord",
+                json={"repo": own_did, "collection": CLUB_NSID, "rkey": rkey, "record": record},
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status not in (200, 201):
+                    resp_data = await resp.json()
+                    logger.warning(f"putRecord {resp.status}: {resp_data}")
+        except Exception as e:
+            logger.warning(f"putRecord background error: {e}")
+
+    asyncio.create_task(_publish_to_repo())
     raise web.HTTPFound("/club")
 
 
@@ -414,8 +419,11 @@ async def federation_join(request: web.Request):
         if not allowed:
             raise web.HTTPForbidden(reason="not in whitelist")
 
-    # Register joining node
+    # Register joining node — only fanout if this is a new member (not a repeat handshake)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    is_new = not db.con.execute(
+        "SELECT 1 FROM federation_member WHERE did=? AND club_id=?", (joining_did, club_id)
+    ).fetchone()
     db.con.execute(
         "INSERT OR REPLACE INTO federation_member (did, club_id, pubkey, pds_url, added_at)"
         " VALUES (?,?,?,?,?)",
@@ -431,24 +439,24 @@ async def federation_join(request: web.Request):
                 (pdid, club_id, ppub, ppds, now)
             )
 
-
-    # Wake peer runner immediately so it subscribes to the new node
-    if _peer_runner:
+    # Wake peer runner only for new members — repeated handshakes must not spin the loop
+    if is_new and _peer_runner:
         _peer_runner.notify_new_member()
 
-    # Fan-out: push new member info to all existing peers so they discover immediately
-    fanout_payload = {
-        "did": joining_did, "pubkey": joining_pubkey,
-        "pds_url": joining_pds, "club_id": club_id, "peers": [],
-    }
-    client = request.app[MILLIPDS_AIOHTTP_CLIENT]
-    existing = db.con.execute(
-        "SELECT pds_url FROM federation_member WHERE club_id=? AND did!=? AND pds_url!=''",
-        (club_id, joining_did)
-    ).fetchall()
-    for (peer_url,) in existing:
-        if peer_url and peer_url.rstrip("/") != joining_pds.rstrip("/"):
-            asyncio.create_task(_fanout_join(client, peer_url, fanout_payload))
+    # Fan-out only for new members — repeated handshakes must not create a fanout storm
+    if is_new:
+        fanout_payload = {
+            "did": joining_did, "pubkey": joining_pubkey,
+            "pds_url": joining_pds, "club_id": club_id, "peers": [],
+        }
+        client = request.app[MILLIPDS_AIOHTTP_CLIENT]
+        existing = db.con.execute(
+            "SELECT pds_url FROM federation_member WHERE club_id=? AND did!=? AND pds_url!=''",
+            (club_id, joining_did)
+        ).fetchall()
+        for (peer_url,) in existing:
+            if peer_url and peer_url.rstrip("/") != joining_pds.rstrip("/"):
+                asyncio.create_task(_fanout_join(client, peer_url, fanout_payload))
 
     # Return full member list + club key (so joining node can decrypt posts)
     _, _, club_key = _get_or_create_keypair(db, club_id)

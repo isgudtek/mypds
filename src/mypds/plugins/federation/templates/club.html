@@ -182,8 +182,8 @@
 
 <script>
 (function () {
-  const OWN_DID = {{ own_did|tojson }};
-  const CLUB_ID = {{ club_id|tojson }};
+  const OWN_DID = {{ own_did|tojson|safe }};
+  const CLUB_ID = {{ club_id|tojson|safe }};
   const dot = document.getElementById('live-dot');
   const msgs = document.getElementById('messages');
   const form = document.getElementById('post-form');
