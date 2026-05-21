@@ -257,11 +257,13 @@ async def club_feed(request: web.Request):
         "SELECT did, pds_url FROM federation_member WHERE club_id=?", (club_id,)
     ).fetchall()
 
+    own_did = sess["did"] if sess else ""
     return render(request, "plugin/federation/club.html", {
         "posts": posts,
         "club_id": club_id,
         "member_count": len(members),
         "running": _peer_task and not _peer_task.done(),
+        "own_did": own_did,
     })
 
 
@@ -459,6 +461,51 @@ async def federation_join(request: web.Request):
         "club_key": club_key,
         "members": [{"did": r[0], "pubkey": r[1], "pds_url": r[2]} for r in members]
     })
+
+
+@routes.get("/club/posts.json")
+async def club_posts_json(request: web.Request):
+    """Polling endpoint — returns latest posts as JSON for 5s fallback poll."""
+    sess = get_session(request)
+    if not sess:
+        raise web.HTTPUnauthorized()
+    db = request.app[MILLIPDS_DB]
+    ws = get_web_store(request)
+    club_id = ws.get_plugin_setting(APP_NAME, "club_id", "mycrab")
+    since = request.rel_url.query.get("since", "")
+    query = (
+        "SELECT cid, author_did, rkey, plaintext, created_at FROM federation_record"
+        " WHERE club_id=?" + (" AND created_at > ?" if since else "") +
+        " ORDER BY created_at DESC LIMIT 40"
+    )
+    params = (club_id, since) if since else (club_id,)
+    rows = db.con.execute(query, params).fetchall()
+    own_did = sess["did"]
+    posts = []
+    for cid, author_did, rkey, plaintext, created_at in rows:
+        member = db.con.execute(
+            "SELECT pds_url FROM federation_member WHERE did=? AND club_id=?",
+            (author_did, club_id)
+        ).fetchone()
+        pds_url = member[0] if member else ""
+        handle = pds_url.replace("https://","").replace("http://","").split("/")[0] if pds_url else author_did
+        try:
+            ts = datetime.datetime.fromisoformat(created_at.replace("Z",""))
+            ts_human = ts.strftime("%-d %b %Y, %H:%M")
+        except Exception:
+            ts_human = created_at
+        try:
+            pl = json.loads(plaintext)
+            post_text = pl.get("text", plaintext)
+            file_ref = pl.get("file", "")
+            file_name = pl.get("file_name", "")
+            mime = pl.get("mime", "")
+        except Exception:
+            post_text = plaintext; file_ref = file_name = mime = ""
+        posts.append({"cid": cid, "author_did": author_did, "handle": handle,
+                      "text": post_text, "file_ref": file_ref, "file_name": file_name,
+                      "mime": mime, "ts_human": ts_human, "created_at": created_at})
+    return web.json_response({"posts": posts})
 
 
 @routes.get("/club/stream")

@@ -1,208 +1,302 @@
 {% extends "node_base.html" %}
 {% block title %}club · {{ club_id }}{% endblock %}
 
+{% block head %}
+<style>
+.club-wrap {
+  display:flex; flex-direction:column; height:calc(100vh - 120px);
+  max-width:720px; margin:0 auto;
+}
+.club-header {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 0 12px; border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.club-header h2 { font-size:1rem; font-weight:600; margin:0; }
+.club-header .meta { font-size:.72rem; color:var(--muted); font-family:var(--mono); }
+.live-dot {
+  width:7px; height:7px; border-radius:50%; background:var(--muted);
+  transition:background .3s;
+}
+.live-dot.on { background:var(--green); animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.club-messages {
+  flex:1; overflow-y:auto; padding:16px 0;
+  display:flex; flex-direction:column; gap:4px;
+}
+
+.msg {
+  display:flex; gap:8px; align-items:flex-end; max-width:85%;
+}
+.msg--mine { align-self:flex-end; flex-direction:row-reverse; }
+.msg--other { align-self:flex-start; }
+
+.msg__avatar {
+  width:28px; height:28px; border-radius:50%; flex-shrink:0;
+  background:var(--surface2); border:1px solid var(--border);
+  overflow:hidden; display:flex; align-items:center; justify-content:center;
+  font-size:.7rem; font-weight:700; color:var(--muted); font-family:var(--mono);
+}
+.msg__avatar img { width:100%; height:100%; object-fit:cover; }
+
+.msg__body { display:flex; flex-direction:column; gap:2px; }
+.msg--mine .msg__body { align-items:flex-end; }
+
+.msg__handle {
+  font-size:.62rem; color:var(--muted); font-family:var(--mono);
+  padding:0 4px;
+}
+.msg__bubble {
+  padding:8px 12px; border-radius:4px 14px 14px 14px;
+  background:var(--surface); border:1px solid var(--border);
+  font-size:.88rem; line-height:1.5; word-break:break-word;
+  max-width:100%;
+}
+.msg--mine .msg__bubble {
+  border-radius:14px 4px 14px 14px;
+  background:color-mix(in srgb,var(--accent) 10%,var(--surface));
+  border-color:color-mix(in srgb,var(--accent) 25%,transparent);
+}
+.msg__time {
+  font-size:.6rem; color:var(--muted); padding:0 4px;
+  font-family:var(--mono);
+}
+.msg__img {
+  max-width:260px; max-height:260px; border-radius:8px;
+  display:block; cursor:pointer; margin-top:4px;
+  border:1px solid var(--border);
+}
+.msg__file {
+  font-size:.78rem; color:var(--accent); display:flex; align-items:center; gap:4px;
+}
+
+.club-input {
+  flex-shrink:0; border-top:1px solid var(--border); padding:12px 0 4px;
+}
+.club-input__row {
+  display:flex; gap:8px; align-items:flex-end;
+}
+.club-input textarea {
+  flex:1; padding:9px 12px; border:1px solid var(--border);
+  border-radius:8px; background:var(--surface); color:var(--text);
+  font-size:.88rem; resize:none; font-family:inherit; min-height:38px; max-height:120px;
+}
+.club-input textarea:focus { outline:none; border-color:var(--accent); }
+.club-input__actions {
+  display:flex; align-items:center; gap:6px; margin-top:6px;
+}
+.attach-label {
+  cursor:pointer; font-size:.72rem; color:var(--accent);
+  display:flex; align-items:center; gap:3px;
+}
+.file-preview {
+  font-size:.7rem; color:var(--muted); max-width:160px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.send-btn {
+  padding:8px 18px; background:var(--accent); color:#fff;
+  border:none; border-radius:7px; cursor:pointer;
+  font-size:.85rem; font-weight:500; white-space:nowrap;
+}
+.send-btn:disabled { opacity:.5; cursor:not-allowed; }
+.enc-note { font-size:.63rem; color:var(--muted); margin-left:auto; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
+<div class="club-wrap">
 
-  <div class="panel__title" style="font-size:1.1rem; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
-    &#x1F512; {{ club_id }} club
-    <span style="font-size:.72rem; color:var(--muted); font-family:var(--mono);">
-      {{ member_count }} member{{ 's' if member_count != 1 else '' }} ·
-      {% if running %}<span style="color:var(--green);">connected</span>{% else %}<span style="color:var(--red);">offline</span>{% endif %}
+  <div class="club-header">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="color:var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+    <h2>{{ club_id }}</h2>
+    <span class="meta">{{ member_count }} member{{ 's' if member_count != 1 else '' }}</span>
+    <span class="meta">·</span>
+    <span class="meta" style="color:{% if running %}var(--green){% else %}var(--red){% endif %}">
+      {% if running %}connected{% else %}offline{% endif %}
     </span>
-    <span id="live-dot" title="live" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-left:4px;"></span>
+    <div class="live-dot" id="live-dot"></div>
   </div>
 
-  <div class="home-layout">
-    <div class="home-main">
-
-      <!-- Post form -->
-      <form id="post-form" enctype="multipart/form-data" style="margin-bottom:16px;">
-        <div style="display:flex; gap:8px; align-items:flex-end;">
-          <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
-            <textarea id="post-text" name="text" rows="2" placeholder="Write something to the club..."
-              style="padding:8px 10px; border:1px solid var(--border); border-radius:6px;
-                     background:var(--surface); color:var(--text); font-size:.88rem; resize:vertical;
-                     font-family:inherit;"></textarea>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <label for="post-file" style="cursor:pointer; font-size:.75rem; color:var(--accent); display:flex; align-items:center; gap:4px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
-                Attach file
-              </label>
-              <input id="post-file" name="file" type="file" style="display:none" accept="image/*,video/*,audio/*,.pdf,.txt">
-              <span id="file-label" style="font-size:.72rem; color:var(--muted);"></span>
-            </div>
-          </div>
-          <button type="submit" id="send-btn"
-            style="padding:8px 16px; background:var(--accent); color:#fff; border:none;
-                   border-radius:6px; cursor:pointer; font-size:.85rem; white-space:nowrap; align-self:flex-start;">
-            Publish encrypted
-          </button>
-        </div>
-        <div style="font-size:.68rem; color:var(--muted); margin-top:4px;">
-          Encrypted for {{ member_count }} club member{{ 's' if member_count != 1 else '' }} only.
-          Public firehose sees ciphertext.
-        </div>
-      </form>
-
-      <!-- Feed -->
-      <div id="feed">
-        {% if posts %}
-          {% for post in posts %}
-          <div class="post" data-cid="{{ post.cid }}">
-            <div class="post__meta">
-              <span class="mono" style="font-size:.72rem; color:var(--accent);">{{ post.handle }}</span>
-              <span>{{ post.ts_human }}</span>
-              <span class="mono" style="font-size:.65rem; color:var(--muted);">{{ club_id }}</span>
-            </div>
-            {% if post.text %}<div class="post__text">{{ post.text }}</div>{% endif %}
-            {% if post.file_ref %}
-            <div class="post__attach" style="margin-top:6px;">
-              {% if post.mime and post.mime.startswith('image/') %}
-                <img src="/club/file/{{ post.file_ref }}" alt="{{ post.file_name }}"
-                     style="max-width:100%; max-height:320px; border-radius:6px; display:block; cursor:pointer;"
-                     onclick="window.open(this.src)">
-              {% else %}
-                <a href="/club/file/{{ post.file_ref }}" download="{{ post.file_name }}"
-                   style="font-size:.8rem; color:var(--accent);">&#x1F4CE; {{ post.file_name }}</a>
-              {% endif %}
-            </div>
-            {% endif %}
-          </div>
-          {% endfor %}
-        {% else %}
-          <div class="empty" id="empty-state">
-            <div class="empty__icon">&#x1F510;</div>
-            No club posts yet. Be the first.
-          </div>
+  <div class="club-messages" id="messages">
+    {% if not posts %}
+    <div style="text-align:center; color:var(--muted); font-size:.82rem; padding:40px 0;" id="empty-state">
+      No messages yet. Be the first.
+    </div>
+    {% endif %}
+    {% for post in posts|reverse %}
+    <div class="msg {% if post.author_did == own_did %}msg--mine{% else %}msg--other{% endif %}"
+         data-cid="{{ post.cid }}">
+      <div class="msg__avatar" id="av-{{ post.author_did[:8] }}">
+        {{ post.handle[:2]|upper }}
+      </div>
+      <div class="msg__body">
+        {% if post.author_did != own_did %}
+        <div class="msg__handle">{{ post.handle }}</div>
         {% endif %}
-      </div>
-
-    </div>
-
-    <div class="home-sidebar">
-      <div class="panel">
-        <div class="panel__title">about this club</div>
-        <div style="font-size:.75rem; font-family:var(--mono); color:var(--muted); line-height:2;">
-          <div>id: <span style="color:var(--text)">{{ club_id }}</span></div>
-          <div>members: <span style="color:var(--text)" id="member-count">{{ member_count }}</span></div>
-          <div>encryption: <span style="color:var(--text)">NaCl hybrid</span></div>
-          <div>status: <span style="color:{% if running %}var(--green){% else %}var(--red){% endif %}">
-            {% if running %}connected{% else %}offline{% endif %}
-          </span></div>
+        <div class="msg__bubble">
+          {% if post.text %}{{ post.text }}{% endif %}
+          {% if post.file_ref %}
+            {% if post.mime and post.mime.startswith('image/') %}
+            <img class="msg__img" src="/club/file/{{ post.file_ref }}"
+                 alt="{{ post.file_name }}" onclick="window.open(this.src)">
+            {% else %}
+            <a class="msg__file" href="/club/file/{{ post.file_ref }}" download="{{ post.file_name }}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+              {{ post.file_name }}
+            </a>
+            {% endif %}
+          {% endif %}
         </div>
-      </div>
-      <div class="panel">
-        <div class="panel__title">how it works</div>
-        <div style="font-size:.75rem; color:var(--muted); line-height:1.6;">
-          Posts are encrypted before reaching the public firehose.
-          Only nodes with a valid club keypair can decrypt. Membership
-          is controlled by the seed server's whitelist.
-        </div>
+        <div class="msg__time">{{ post.ts_human }}</div>
       </div>
     </div>
+    {% endfor %}
   </div>
 
+  <div class="club-input">
+    <form id="post-form" enctype="multipart/form-data">
+      <div class="club-input__row">
+        <textarea id="post-text" name="text" rows="1"
+          placeholder="Write something encrypted…"></textarea>
+        <button type="submit" class="send-btn" id="send-btn">Send</button>
+      </div>
+      <div class="club-input__actions">
+        <label class="attach-label" for="post-file">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+          Attach
+        </label>
+        <input id="post-file" name="file" type="file" style="display:none"
+               accept="image/*,video/*,audio/*,.pdf,.txt">
+        <span class="file-preview" id="file-label"></span>
+        <span class="enc-note">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          encrypted · {{ member_count }} members
+        </span>
+      </div>
+    </form>
+  </div>
+
+</div>
 </div>
 
 <script>
 (function () {
+  const OWN_DID = {{ own_did|tojson }};
+  const CLUB_ID = {{ club_id|tojson }};
   const dot = document.getElementById('live-dot');
-  const feed = document.getElementById('feed');
+  const msgs = document.getElementById('messages');
   const form = document.getElementById('post-form');
   const fileInput = document.getElementById('post-file');
   const fileLabel = document.getElementById('file-label');
   const sendBtn = document.getElementById('send-btn');
+  const knownCids = new Set([...msgs.querySelectorAll('[data-cid]')].map(el => el.dataset.cid));
 
-  // File input label
-  fileInput.addEventListener('change', () => {
-    fileLabel.textContent = fileInput.files[0] ? fileInput.files[0].name : '';
-  });
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
 
-  // Render a post object from SSE into a DOM element
-  function buildPost(d) {
+  function initials(handle) {
+    return (handle||'?').slice(0,2).toUpperCase();
+  }
+
+  function buildMsg(d) {
+    const mine = d.author_did === OWN_DID;
     const div = document.createElement('div');
-    div.className = 'post';
+    div.className = 'msg ' + (mine ? 'msg--mine' : 'msg--other');
     div.dataset.cid = d.cid || '';
 
-    const meta = document.createElement('div');
-    meta.className = 'post__meta';
-    meta.innerHTML =
-      `<span class="mono" style="font-size:.72rem;color:var(--accent);">${esc(d.handle)}</span>` +
-      `<span>${esc(d.ts_human)}</span>` +
-      `<span class="mono" style="font-size:.65rem;color:var(--muted);">{{ club_id }}</span>`;
-    div.appendChild(meta);
-
-    if (d.text) {
-      const p = document.createElement('div');
-      p.className = 'post__text';
-      p.textContent = d.text;
-      div.appendChild(p);
+    const avId = 'av-' + (d.author_did||'').slice(0,8);
+    let avatarHtml = '';
+    const existingAv = document.getElementById(avId);
+    if (existingAv) {
+      avatarHtml = existingAv.outerHTML;
+    } else {
+      avatarHtml = `<div class="msg__avatar" id="${avId}">${esc(initials(d.handle))}</div>`;
     }
 
+    let bubbleContent = '';
+    if (d.text) bubbleContent += esc(d.text);
     if (d.file_ref) {
-      const att = document.createElement('div');
-      att.className = 'post__attach';
-      att.style.marginTop = '6px';
       if (d.mime && d.mime.startsWith('image/')) {
-        att.innerHTML = `<img src="/club/file/${esc(d.file_ref)}" alt="${esc(d.file_name)}"
-          style="max-width:100%;max-height:320px;border-radius:6px;display:block;cursor:pointer;"
-          onclick="window.open(this.src)">`;
+        bubbleContent += `<img class="msg__img" src="/club/file/${esc(d.file_ref)}" alt="${esc(d.file_name)}" onclick="window.open(this.src)">`;
       } else {
-        att.innerHTML = `<a href="/club/file/${esc(d.file_ref)}" download="${esc(d.file_name)}"
-          style="font-size:.8rem;color:var(--accent);">&#x1F4CE; ${esc(d.file_name)}</a>`;
+        bubbleContent += `<a class="msg__file" href="/club/file/${esc(d.file_ref)}" download="${esc(d.file_name)}">📎 ${esc(d.file_name)}</a>`;
       }
-      div.appendChild(att);
     }
+
+    div.innerHTML = avatarHtml + `
+      <div class="msg__body">
+        ${!mine ? `<div class="msg__handle">${esc(d.handle)}</div>` : ''}
+        <div class="msg__bubble">${bubbleContent}</div>
+        <div class="msg__time">${esc(d.ts_human||'')}</div>
+      </div>`;
     return div;
   }
 
-  function esc(s) {
-    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  function prependPost(d) {
+  function appendMsg(d) {
+    if (knownCids.has(d.cid)) return;
+    knownCids.add(d.cid);
     const empty = document.getElementById('empty-state');
     if (empty) empty.remove();
-    feed.prepend(buildPost(d));
+    msgs.appendChild(buildMsg(d));
+    msgs.scrollTop = msgs.scrollHeight;
   }
 
-  // SSE
+  // Scroll to bottom on load
+  msgs.scrollTop = msgs.scrollHeight;
+
+  // SSE live stream
   let es;
   function connect() {
     es = new EventSource('/club/stream');
-    es.onopen = () => { dot.style.background = 'var(--green)'; };
+    es.onopen = () => { dot.classList.add('on'); };
     es.onmessage = (e) => {
-      try { prependPost(JSON.parse(e.data)); } catch (_) {}
+      try { appendMsg(JSON.parse(e.data)); } catch (_) {}
     };
     es.onerror = () => {
-      dot.style.background = 'var(--red)';
+      dot.classList.remove('on');
       es.close();
       setTimeout(connect, 4000);
     };
   }
   connect();
 
-  // Intercept form submit → fetch, no reload
+  // Poll every 5s as fallback (picks up posts from remote nodes that SSE may miss)
+  setInterval(async () => {
+    try {
+      const r = await fetch('/club/posts.json');
+      if (!r.ok) return;
+      const data = await r.json();
+      (data.posts || []).forEach(appendMsg);
+    } catch (_) {}
+  }, 5000);
+
+  // Auto-grow textarea
+  const ta = document.getElementById('post-text');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  });
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.dispatchEvent(new Event('submit')); }
+  });
+
+  fileInput.addEventListener('change', () => {
+    fileLabel.textContent = fileInput.files[0] ? fileInput.files[0].name : '';
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const text = document.getElementById('post-text').value.trim();
+    const text = ta.value.trim();
     const file = fileInput.files[0];
     if (!text && !file) return;
-
-    sendBtn.disabled = true;
-    sendBtn.textContent = '…';
-
+    sendBtn.disabled = true; sendBtn.textContent = '…';
     const fd = new FormData(form);
-    try {
-      await fetch('/club/post', { method: 'POST', body: fd });
-    } catch (_) {}
-
-    document.getElementById('post-text').value = '';
-    fileInput.value = '';
-    fileLabel.textContent = '';
-    sendBtn.disabled = false;
-    sendBtn.textContent = 'Publish encrypted';
+    try { await fetch('/club/post', { method:'POST', body:fd }); } catch(_) {}
+    ta.value = ''; ta.style.height = 'auto';
+    fileInput.value = ''; fileLabel.textContent = '';
+    sendBtn.disabled = false; sendBtn.textContent = 'Send';
   });
 })();
 </script>
